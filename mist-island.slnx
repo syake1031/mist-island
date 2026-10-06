@@ -1,0 +1,7 @@
+﻿<Solution>
+  <Project Path="MistIsland.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="MistIsland.Tests.csproj" />
+  <Project Path="MistIsland.Editor.csproj" />
+</Solution>
