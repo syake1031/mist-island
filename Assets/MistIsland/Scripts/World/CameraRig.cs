@@ -3,24 +3,24 @@ using UnityEngine;
 namespace MistIsland
 {
     /// <summary>
-    /// 斜め上から島を見下ろすカメラ。島全体が一画面に収まる距離に自動で合わせ、
-    /// プレイヤーの方へ少しだけ寄せる。画面右半分のドラッグや Q/E で回転、ホイールでズーム。
+    /// 高い角度から島を見下ろすカメラ。画面の横幅に viewWidth ぶんの範囲が入る距離に合わせ、
+    /// プレイヤーを追う（島の外へは行きすぎない）。画面右半分のドラッグや Q/E で回転、ホイールでズーム。
     /// </summary>
     public class CameraRig : MonoBehaviour
     {
-        public float pitch = 52f;
-        public float fieldOfView = 40f;
-        [Tooltip("島の端に残す余白")]
-        public float margin = 1.5f;
+        public float pitch = 58f;
+        public float fieldOfView = 30f;
+        [Tooltip("画面の横幅に入る広さ（ワールドの単位）")]
+        public float viewWidth = 24f;
         [Tooltip("どれだけプレイヤーの方へ寄せるか（0 で島の中心固定、1 でプレイヤー中心）")]
-        public float followWeight = 0.3f;
+        public float followWeight = 1f;
         public float followSharpness = 6f;
         public float keyboardRotateSpeed = 90f;
         public float minZoom = 0.5f;
         public float maxZoom = 1.4f;
 
-        /// <summary>画面に収める島の半径。</summary>
-        public float FitRadius = 13f;
+        /// <summary>島の半径。カメラの注視点がこの外へ出すぎないようにする。</summary>
+        public float FitRadius = 16f;
         /// <summary>今のカメラの距離（霧の計算でも使う）。</summary>
         public float distance = 40f;
 
@@ -53,18 +53,28 @@ namespace MistIsland
             return rot * new Vector3(input.x, 0f, input.y);
         }
 
-        /// <summary>島の直径が画面の横幅に収まる距離。</summary>
+        /// <summary>viewWidth が画面の横幅に収まる距離。</summary>
         float FitDistance()
         {
             float halfV = fieldOfView * 0.5f * Mathf.Deg2Rad;
             float tanH = Mathf.Tan(halfV) * Mathf.Max(0.3f, _camera.aspect);
-            return (FitRadius + margin) / Mathf.Max(0.05f, tanH);
+            return viewWidth * 0.5f / Mathf.Max(0.05f, tanH);
         }
 
         Vector3 DesiredFocus()
         {
             Vector3 center = new Vector3(0f, 1.5f, 0f);
-            return _target != null ? Vector3.Lerp(center, _target.position, followWeight) : center;
+            Vector3 focus = _target != null ? Vector3.Lerp(center, _target.position, followWeight) : center;
+            // 注視点は島の内側にとどめる
+            Vector3 flat = new Vector3(focus.x, 0f, focus.z);
+            float limit = Mathf.Max(0f, FitRadius * 0.7f);
+            if (flat.magnitude > limit)
+            {
+                flat = flat.normalized * limit;
+                focus.x = flat.x;
+                focus.z = flat.z;
+            }
+            return focus;
         }
 
         void LateUpdate()

@@ -139,6 +139,26 @@ namespace MistIsland
             }
         }
 
+        static Material _shadowMaterial;
+
+        /// <summary>足元の丸い影。parent の足元（ローカル原点）に置く。</summary>
+        public static GameObject BlobShadow(Transform parent, float radius)
+        {
+            if (_shadowMaterial == null)
+            {
+                Shader shader = Resources.Load<Shader>("MistIsland/BlobShadow");
+                if (shader == null) shader = Shader.Find("MistIsland/BlobShadow");
+                if (shader == null) return null;
+                _shadowMaterial = new Material(shader);
+            }
+            var go = new GameObject("BlobShadow");
+            go.AddComponent<MeshFilter>().sharedMesh = PrimitiveMesh(PrimitiveType.Quad);
+            go.AddComponent<MeshRenderer>();
+            Setup(go, parent, new Vector3(0f, 0.04f, 0f), new Vector3(radius * 2f, radius * 2f, 1f), _shadowMaterial);
+            go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            return go;
+        }
+
         static readonly Dictionary<PrimitiveType, Mesh> _primitiveMeshes = new Dictionary<PrimitiveType, Mesh>();
 
         /// <summary>Unity 標準プリミティブのメッシュだけを取り出す。</summary>

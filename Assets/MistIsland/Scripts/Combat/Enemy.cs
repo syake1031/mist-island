@@ -55,6 +55,7 @@ namespace MistIsland
             _model = new GameObject("Model").transform;
             _model.SetParent(transform, false);
             _model.localScale = Vector3.one * def.scale;
+            Shapes.BlobShadow(_model, 0.55f);
             var eye = new Color(1f, 0.85f, 0.55f);
             Shapes.Create(PrimitiveType.Capsule, _model, new Vector3(0, 0.55f, 0), new Vector3(0.75f, 0.55f, 0.75f), def.color, "Body");
             Shapes.Create(PrimitiveType.Sphere, _model, new Vector3(0, 1.15f, 0.05f), new Vector3(0.55f, 0.5f, 0.55f), def.color * 0.85f, "Head");

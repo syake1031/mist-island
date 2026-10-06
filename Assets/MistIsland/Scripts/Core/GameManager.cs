@@ -17,6 +17,7 @@ namespace MistIsland
         public SaveData Data { get; private set; }
         public DayCycle Clock { get; private set; }
         public Island Island { get; private set; }
+        public Sea Sea { get; private set; }
         public TownManager Town { get; private set; }
         public PlayerController Player { get; private set; }
         public CameraRig Rig { get; private set; }
@@ -50,7 +51,8 @@ namespace MistIsland
 
             Island = CreateChild<Island>("Island");
             Island.Build(config, Data.expansion);
-            CreateChild<Sea>("Sea").Build(400f);
+            Sea = CreateChild<Sea>("Sea");
+            Sea.Build(400f, Island);
 
             Town = CreateChild<TownManager>("Town");
             Town.Initialize(config, Island, Data.buildings);
@@ -427,6 +429,7 @@ namespace MistIsland
             Data.expansion++;
             Island.Build(Config, Data.expansion);
             Town.RefreshSlots();
+            Sea.Rebuild(Island);
             Rig.FitRadius = Island.Radius;
             Vector3 p = Player.transform.position;
             p.y = Island.HeightAt(p.x, p.z);

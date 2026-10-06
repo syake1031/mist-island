@@ -15,6 +15,9 @@ namespace MistIsland
         public Health Health { get; private set; }
         public bool Ruined { get { return !Health.IsAlive; } }
 
+        /// <summary>建物の見た目の大きさ（キャラクターに対して大きめに見せる）。</summary>
+        public const float Scale = 2f;
+
         GameConfig _config;
         Transform _visual;
         Transform _coinMarker;
@@ -30,7 +33,7 @@ namespace MistIsland
             _config = config;
             transform.position = slot.position;
             Health = gameObject.AddComponent<Health>();
-            Health.Radius = def.type == BuildingType.Fence ? 1.4f : 1.2f;
+            Health.Radius = (def.type == BuildingType.Fence ? 1.4f : 1.2f) * Scale;
             Health.Damaged += OnDamaged;
             Health.Died += OnRuined;
             _block = new MaterialPropertyBlock();
@@ -124,7 +127,7 @@ namespace MistIsland
                     if (target != null)
                     {
                         _fireTimer = Def.fireInterval;
-                        Boulder.Throw(transform.position + Vector3.up * 1.6f, target.transform.position, Damage, Def.splashRadius);
+                        Boulder.Throw(transform.position + Vector3.up * 1.6f * Scale, target.transform.position, Damage, Def.splashRadius);
                     }
                     else
                     {
@@ -142,7 +145,7 @@ namespace MistIsland
                     if (target != null)
                     {
                         _fireTimer = Def.fireInterval;
-                        Vector3 from = transform.position + Vector3.up * 3.4f;
+                        Vector3 from = transform.position + Vector3.up * 3.4f * Scale;
                         Vector3 to = target.transform.position + Vector3.up * 0.6f;
                         Projectile.Fire(from, to - from, 18f, Range + 2f, Damage, false);
                     }
@@ -181,6 +184,7 @@ namespace MistIsland
             _visual = new GameObject("Visual").transform;
             _visual.SetParent(transform, false);
             _visual.localRotation = Quaternion.Euler(0f, Slot.yaw, 0f);
+            _visual.localScale = Vector3.one * Scale;
             _coinMarker = null;
 
             float grow = 1f + 0.06f * (Level - 1);
@@ -282,8 +286,16 @@ namespace MistIsland
 
             if (Ruined)
             {
-                _visual.localScale = new Vector3(1f, 0.45f, 1f);
+                _visual.localScale = new Vector3(Scale, 0.45f * Scale, Scale);
                 _visual.localRotation *= Quaternion.Euler(8f, 0f, 6f);
+            }
+
+            // 足元の影（地面の色を暗くした円）
+            if (Island.Instance != null)
+            {
+                Color ground = Island.Instance.GroundColorAt(transform.position.x, transform.position.z);
+                var shadow = Shapes.Create(PrimitiveType.Cylinder, transform, new Vector3(0.5f, 0.03f, -0.4f), new Vector3(2.7f * Scale, 0.01f, 2.3f * Scale), ground * 0.8f, "Shadow");
+                shadow.transform.SetParent(_visual, true);
             }
 
             _renderers = _visual.GetComponentsInChildren<Renderer>();
