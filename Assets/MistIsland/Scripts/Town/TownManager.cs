@@ -43,8 +43,9 @@ namespace MistIsland
                 {
                     BuildingDef def = config.Building((BuildingType)b.type);
                     if (def == null) continue;
-                    SlotInfo slot;
-                    if (!TryGetSlot(b.slotId, out slot)) continue;
+                    if (_buildings.ContainsKey(b.slotId)) continue;
+                    SlotInfo slot = TownLayout.FromId(b.slotId);
+                    slot.position.y = _island.HeightAt(slot.position.x, slot.position.z);
                     Place(def, slot, b.level, b.stored);
                 }
             }
@@ -105,44 +106,23 @@ namespace MistIsland
         void OnHallDestroyed()
         {
             BuildHallVisual(true);
-            int lost = 0;
-            foreach (var b in _buildings.Values)
-            {
-                if (!b.Def.IsFacility) continue;
-                lost += Mathf.FloorToInt(b.Stored);
-                b.ClearStored();
-            }
-            var gm = GameManager.Instance;
-            if (gm != null)
-                gm.Toast(lost > 0 ? "拠点が壊された！施設に貯まっていた収入が奪われた" : "拠点が壊された！朝まで持ちこたえよう");
+            // 拠点が壊されたらゲームオーバー（最初からやり直し）
+            if (GameManager.Instance != null) GameManager.Instance.GameOver();
         }
 
         // ---- 空き地 ----
 
         public void RefreshSlots()
         {
-            _slots = TownLayout.AvailableSlots(_island);
+            _slots = _island.Slots ?? new List<SlotInfo>();
             if (Hall != null) Hall.transform.position = new Vector3(0f, _island.HeightAt(0f, 0f), 0f);
-            foreach (var s in _slots)
+            foreach (var b in _buildings.Values)
             {
-                Building b;
-                if (_buildings.TryGetValue(s.id, out b)) b.MoveTo(s);
+                SlotInfo s = b.Slot;
+                s.position.y = _island.HeightAt(s.position.x, s.position.z);
+                b.MoveTo(s);
             }
             RefreshMarkers();
-        }
-
-        bool TryGetSlot(int id, out SlotInfo slot)
-        {
-            foreach (var s in _slots)
-            {
-                if (s.id == id)
-                {
-                    slot = s;
-                    return true;
-                }
-            }
-            slot = default(SlotInfo);
-            return false;
         }
 
         void RefreshMarkers()
@@ -186,8 +166,7 @@ namespace MistIsland
             return b;
         }
 
-        public static int BuildCoinCost(BuildingDef def) { return def.baseCoinCost; }
-        public static int BuildMaterialCost(BuildingDef def) { return def.baseMaterialCost; }
+        public static Cost BuildCost(BuildingDef def) { return def.cost ?? new Cost(); }
 
         public bool TryBuild(SlotInfo slot, BuildingDef def, out string error)
         {
@@ -196,7 +175,7 @@ namespace MistIsland
             if (_buildings.ContainsKey(slot.id)) { error = "ここにはもう建っています"; return false; }
             if (!gm.IsPrepTime) { error = "夜は建てられません"; return false; }
             if (gm.Data.level < def.unlockLevel) { error = "Lv" + def.unlockLevel + "で開放"; return false; }
-            if (!gm.TrySpend(BuildCoinCost(def), BuildMaterialCost(def))) { error = "コインか素材が足りません"; return false; }
+            if (!gm.TrySpend(BuildCost(def))) { error = "コインか素材が足りません"; return false; }
 
             Place(def, slot, 1, 0f);
             RefreshMarkers();
@@ -211,7 +190,7 @@ namespace MistIsland
             error = null;
             if (b.IsMaxLevel) { error = "これ以上強化できません"; return false; }
             if (!gm.IsPrepTime) { error = "夜は強化できません"; return false; }
-            if (!gm.TrySpend(b.NextCoinCost, b.NextMaterialCost)) { error = "コインか素材が足りません"; return false; }
+            if (!gm.TrySpend(b.NextCost)) { error = "コインか素材が足りません"; return false; }
 
             b.SetLevel(b.Level + 1);
             gm.NotifyChanged();
@@ -253,6 +232,20 @@ namespace MistIsland
             }
         }
 
+        /// <summary>霧払いの灯の範囲にいる敵の速さの倍率。</summary>
+        public float EnemySpeedFactorAt(Vector3 pos)
+        {
+            float factor = 1f;
+            foreach (var b in _buildings.Values)
+            {
+                if (b.Ruined || b.Def.slowFactor >= 1f) continue;
+                Vector3 d = b.transform.position - pos;
+                d.y = 0f;
+                if (d.magnitude <= b.Range) factor = Mathf.Min(factor, b.Def.slowFactor);
+            }
+            return factor;
+        }
+
         public void AddOfflineProduction(double seconds)
         {
             foreach (var b in _buildings.Values) b.AddProduction(seconds);
@@ -273,14 +266,23 @@ namespace MistIsland
 
             foreach (var s in _slots)
             {
+                if (_buildings.ContainsKey(s.id)) continue;
                 Vector3 d = s.position - pos;
                 d.y = 0f;
                 float dist = d.magnitude - 1f;
                 if (dist >= best) continue;
                 best = dist;
-                Building b;
-                _buildings.TryGetValue(s.id, out b);
-                result = new Interaction { valid = true, slot = s, building = b };
+                result = new Interaction { valid = true, slot = s };
+            }
+
+            foreach (var b in _buildings.Values)
+            {
+                Vector3 d = b.transform.position - pos;
+                d.y = 0f;
+                float dist = d.magnitude - 1f;
+                if (dist >= best) continue;
+                best = dist;
+                result = new Interaction { valid = true, slot = b.Slot, building = b };
             }
             return result;
         }
@@ -305,8 +307,7 @@ namespace MistIsland
                 int amount = b.TakeStored();
                 if (amount <= 0) continue;
                 Vector3 at = b.transform.position + Vector3.up * 3f;
-                if (b.Def.producesMaterials) gm.AddMaterials(amount, at);
-                else gm.AddCoins(amount, at);
+                gm.AddResource(b.Def.produces, amount, at);
             }
         }
 

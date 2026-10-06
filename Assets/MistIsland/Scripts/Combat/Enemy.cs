@@ -250,6 +250,8 @@ namespace MistIsland
 
         void Move(Vector3 dir, float speed, Island island)
         {
+            var gm = GameManager.Instance;
+            if (gm != null && gm.Town != null && !_retreating) speed *= gm.Town.EnemySpeedFactorAt(transform.position);
             Vector3 p = transform.position + dir * speed * Time.deltaTime;
             p.y = island.SurfaceAt(p.x, p.z);
             transform.position = p;

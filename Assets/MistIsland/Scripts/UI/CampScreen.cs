@@ -96,6 +96,16 @@ namespace MistIsland
             StartCoroutine(Transition(false));
         }
 
+        /// <summary>暗転なしですぐ閉じる（ゲームオーバー時など）。</summary>
+        public void ForceClose()
+        {
+            StopAllCoroutines();
+            _transitioning = false;
+            _fade.alpha = 0f;
+            _fade.blocksRaycasts = false;
+            _root.SetActive(false);
+        }
+
         IEnumerator Transition(bool open)
         {
             _transitioning = true;
@@ -142,7 +152,7 @@ namespace MistIsland
             if (!IsOpen) return;
             SaveData d = _gm.Data;
             PlayerStats s = _gm.CurrentStats;
-            _header.text = "コイン " + d.coins + "　素材 " + d.materials + "\n" +
+            _header.text = Hud.WalletText(d) + "\n" +
                            "Lv" + d.level + "　" + s.job.name + "　体力 " + Mathf.RoundToInt(s.maxHp) +
                            "　攻撃 " + s.damage.ToString("0.0") + "　被ダメ軽減 " + Mathf.RoundToInt(s.damageReduction * 100f) + "%";
 
@@ -217,11 +227,10 @@ namespace MistIsland
                     string text = "<b>" + def.name + " +" + (owned.level - 1) + "</b>\n<size=28>攻撃力 " + dmg.ToString("0.0") + "</size>";
                     bool isEquipped = equipped == def.id;
                     bool max = owned.level >= _gm.Config.maxEquipLevel;
-                    int c, m;
-                    _gm.ItemUpgradeCost(def.coinCost, def.materialCost, owned.level, out c, out m);
+                    Cost up = _gm.ItemUpgradeCost(def.cost, owned.level);
                     UIFactory.Row(_content, text, 150f,
                         new UIFactory.RowButton(isEquipped ? "装備中" : "装備する", !isEquipped, () => _gm.EquipWeapon(item), 200f),
-                        new UIFactory.RowButton(max ? "最大" : "強化\n<size=22>" + UIFactory.Cost(c, m) + "</size>", !max && _gm.CanAfford(c, m), () =>
+                        new UIFactory.RowButton(max ? "最大" : "強化\n<size=22>" + up.ToText() + "</size>", !max && _gm.CanAfford(up), () =>
                         {
                             string err;
                             Act(_gm.TryUpgradeWeapon(item, out err), err);
@@ -231,8 +240,8 @@ namespace MistIsland
                 {
                     bool unlocked = d.level >= def.unlockLevel;
                     string text = "<b>" + def.name + "</b>（未所持）\n<size=28>攻撃力 " + def.damage.ToString("0.0") + "</size>";
-                    string label = unlocked ? "作る\n<size=22>" + UIFactory.Cost(def.coinCost, def.materialCost) + "</size>" : "Lv" + def.unlockLevel + "で作れる";
-                    UIFactory.Row(_content, text, 150f, new UIFactory.RowButton(label, unlocked && _gm.CanAfford(def.coinCost, def.materialCost), () =>
+                    string label = unlocked ? "作る\n<size=22>" + def.cost.ToText() + "</size>" : "Lv" + def.unlockLevel + "で作れる";
+                    UIFactory.Row(_content, text, 150f, new UIFactory.RowButton(label, unlocked && _gm.CanAfford(def.cost), () =>
                     {
                         string err;
                         Act(_gm.TryCraftWeapon(item, out err), err);
@@ -256,11 +265,10 @@ namespace MistIsland
                                   "%　体力 +" + Mathf.RoundToInt(def.bonusHp * scale) + "</size>";
                     bool isEquipped = d.equippedArmor == def.id;
                     bool max = owned.level >= _gm.Config.maxEquipLevel;
-                    int c, m;
-                    _gm.ItemUpgradeCost(def.coinCost, def.materialCost, owned.level, out c, out m);
+                    Cost up = _gm.ItemUpgradeCost(def.cost, owned.level);
                     UIFactory.Row(_content, text, 150f,
                         new UIFactory.RowButton(isEquipped ? "装備中" : "装備する", !isEquipped, () => _gm.EquipArmor(item), 200f),
-                        new UIFactory.RowButton(max ? "最大" : "強化\n<size=22>" + UIFactory.Cost(c, m) + "</size>", !max && _gm.CanAfford(c, m), () =>
+                        new UIFactory.RowButton(max ? "最大" : "強化\n<size=22>" + up.ToText() + "</size>", !max && _gm.CanAfford(up), () =>
                         {
                             string err;
                             Act(_gm.TryUpgradeArmor(item, out err), err);
@@ -270,8 +278,8 @@ namespace MistIsland
                 {
                     bool unlocked = d.level >= def.unlockLevel;
                     string text = "<b>" + def.name + "</b>（未所持）\n<size=28>被ダメ軽減 " + Mathf.RoundToInt(def.damageReduction * 100f) + "%　体力 +" + Mathf.RoundToInt(def.bonusHp) + "</size>";
-                    string label = unlocked ? "作る\n<size=22>" + UIFactory.Cost(def.coinCost, def.materialCost) + "</size>" : "Lv" + def.unlockLevel + "で作れる";
-                    UIFactory.Row(_content, text, 150f, new UIFactory.RowButton(label, unlocked && _gm.CanAfford(def.coinCost, def.materialCost), () =>
+                    string label = unlocked ? "作る\n<size=22>" + def.cost.ToText() + "</size>" : "Lv" + def.unlockLevel + "で作れる";
+                    UIFactory.Row(_content, text, 150f, new UIFactory.RowButton(label, unlocked && _gm.CanAfford(def.cost), () =>
                     {
                         string err;
                         Act(_gm.TryCraftArmor(item, out err), err);

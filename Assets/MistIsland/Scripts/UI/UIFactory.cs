@@ -248,13 +248,6 @@ namespace MistIsland
             return row;
         }
 
-        public static string Cost(int coins, int materials)
-        {
-            string s = coins + "コイン";
-            if (materials > 0) s += " " + materials + "素材";
-            return s;
-        }
-
         /// <summary>レイアウトに残らないよう、非表示にしてから消す。</summary>
         public static void ClearChildren(Transform parent)
         {

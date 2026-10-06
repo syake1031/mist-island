@@ -39,8 +39,10 @@ namespace MistIsland
             InputBridge.Reset();
 
             SaveData loaded = SaveSystem.Load();
+            // 形式が古いセーブは引き継げないので最初から
+            if (loaded != null && loaded.version < SaveData.CurrentVersion) loaded = null;
             bool isNew = loaded == null;
-            Data = loaded ?? new SaveData { coins = config.startingCoins };
+            Data = loaded ?? NewGame(config);
             Sanitize();
 
             Clock = gameObject.AddComponent<DayCycle>();
@@ -57,6 +59,7 @@ namespace MistIsland
             Player = CreateChild<PlayerController>("Player");
             Player.Initialize(config, Rig, PlayerStats.Compute(config, Data));
             Rig.Initialize(cam, Player.transform);
+            Rig.FitRadius = Island.Radius;
 
             gameObject.AddComponent<MistVisuals>().Initialize(Clock, cam, Rig);
 
@@ -78,7 +81,8 @@ namespace MistIsland
                     "・朝と昼：施設の収入を受け取り、建物を建てて町を育てる\n" +
                     "・夜：襲撃者が海から上陸してくる。近づくと自動で攻撃する\n" +
                     "・画面右側を長押しして離すと溜め攻撃\n" +
-                    "・すぐ近くのベースキャンプで、ジョブや装備を変えられる\n\n" +
+                    "・すぐ近くのベースキャンプで、ジョブや装備を変えられる\n" +
+                    "・ベースキャンプが壊されると最初からやり直し\n\n" +
                     "（左半分ドラッグで移動、右半分ドラッグでカメラ回転）");
                 Save();
             }
@@ -87,6 +91,13 @@ namespace MistIsland
                 double elapsed = (DateTime.UtcNow.Ticks - Data.lastSavedUtcTicks) / (double)TimeSpan.TicksPerSecond;
                 ApplyOffline(elapsed);
             }
+        }
+
+        static SaveData NewGame(GameConfig config)
+        {
+            var data = new SaveData { coins = config.startingCoins };
+            data.Add(ResourceType.Wood, config.startingWood);
+            return data;
         }
 
         T CreateChild<T>(string name) where T : Component
@@ -117,7 +128,7 @@ namespace MistIsland
                 Clock.DayStarted -= OnDayStarted;
             }
             if (Instance == this) Instance = null;
-            if (IsInCamp) Time.timeScale = 1f;
+            Time.timeScale = 1f;
         }
 
         void Update()
@@ -137,32 +148,38 @@ namespace MistIsland
             if (Changed != null) Changed();
         }
 
+        public static Color ResourceTextColor(ResourceType type)
+        {
+            return type == ResourceType.Coins ? new Color(1f, 0.85f, 0.35f) : Building.ResourceColor(type) * 1.25f;
+        }
+
+        public void AddResource(ResourceType type, int amount, Vector3? at = null)
+        {
+            if (amount <= 0) return;
+            Data.Add(type, amount);
+            if (at.HasValue && Hud != null) Hud.FloatingText(at.Value, "+" + amount + " " + Names.Of(type), ResourceTextColor(type));
+            NotifyChanged();
+        }
+
         public void AddCoins(int amount, Vector3? at = null)
         {
-            if (amount <= 0) return;
-            Data.coins += amount;
-            if (at.HasValue && Hud != null) Hud.FloatingText(at.Value, "+" + amount + " コイン", new Color(1f, 0.85f, 0.35f));
-            NotifyChanged();
+            AddResource(ResourceType.Coins, amount, at);
         }
 
-        public void AddMaterials(int amount, Vector3? at = null)
+        public bool CanAfford(Cost cost)
         {
-            if (amount <= 0) return;
-            Data.materials += amount;
-            if (at.HasValue && Hud != null) Hud.FloatingText(at.Value, "+" + amount + " 素材", new Color(0.65f, 0.85f, 1f));
-            NotifyChanged();
+            if (cost == null) return true;
+            foreach (var t in Cost.All)
+                if (Data.Get(t) < cost.Get(t)) return false;
+            return true;
         }
 
-        public bool CanAfford(int coins, int materials)
+        public bool TrySpend(Cost cost)
         {
-            return Data.coins >= coins && Data.materials >= materials;
-        }
-
-        public bool TrySpend(int coins, int materials)
-        {
-            if (!CanAfford(coins, materials)) return false;
-            Data.coins -= coins;
-            Data.materials -= materials;
+            if (!CanAfford(cost)) return false;
+            if (cost != null)
+                foreach (var t in Cost.All)
+                    Data.Add(t, -cost.Get(t));
             NotifyChanged();
             return true;
         }
@@ -220,9 +237,16 @@ namespace MistIsland
             EnemyDef def = enemy.Def;
             AddXp(def.xp);
             Vector3 at = enemy.transform.position + Vector3.up * 2f;
-            int mats = UnityEngine.Random.Range(def.materialMin, def.materialMax + 1);
-            if (mats > 0) AddMaterials(mats, at);
-            if (def.coins > 0) AddCoins(def.coins, mats > 0 ? at + Vector3.up * 0.6f : at);
+            if (def.drops == null) return;
+            foreach (var t in Cost.All)
+            {
+                int max = def.drops.Get(t);
+                if (max <= 0) continue;
+                int amount = t == ResourceType.Coins ? max : UnityEngine.Random.Range(0, max + 1);
+                if (amount <= 0) continue;
+                AddResource(t, amount, at);
+                at += Vector3.up * 0.6f;
+            }
         }
 
         // ---- ジョブ・装備 ----
@@ -273,10 +297,13 @@ namespace MistIsland
             }
         }
 
-        public void ItemUpgradeCost(int itemCoinCost, int itemMaterialCost, int level, out int coins, out int materials)
+        /// <summary>装備を level から level+1 に強化するコスト。</summary>
+        public Cost ItemUpgradeCost(Cost itemCost, int level)
         {
-            coins = Formulas.UpgradeCost(Config.upgradeCoinBase + itemCoinCost / 4, Config.equipCostGrowth, level);
-            materials = Formulas.UpgradeCost(Config.upgradeMaterialBase + itemMaterialCost / 4, Config.equipCostGrowth, level);
+            Cost baseCost = (itemCost ?? new Cost()).Scaled(Config.upgradeCostRatio);
+            foreach (var t in Cost.All)
+                baseCost.Set(t, baseCost.Get(t) + (Config.upgradeBaseCost != null ? Config.upgradeBaseCost.Get(t) : 0));
+            return baseCost.Scaled(Math.Pow(Config.equipCostGrowth, Math.Max(0, level - 1)));
         }
 
         public bool TryCraftWeapon(WeaponItemDef def, out string error)
@@ -284,7 +311,7 @@ namespace MistIsland
             error = null;
             if (Data.FindWeapon(def.id) != null) { error = "もう持っています"; return false; }
             if (Data.level < def.unlockLevel) { error = "Lv" + def.unlockLevel + "で作れる"; return false; }
-            if (!TrySpend(def.coinCost, def.materialCost)) { error = "コインか素材が足りません"; return false; }
+            if (!TrySpend(def.cost)) { error = "コインか素材が足りません"; return false; }
             Data.weapons.Add(new OwnedItem { id = def.id });
             Data.SetEquippedWeapon(def.type, def.id);
             RefreshPlayer();
@@ -298,7 +325,7 @@ namespace MistIsland
             error = null;
             if (Data.FindArmor(def.id) != null) { error = "もう持っています"; return false; }
             if (Data.level < def.unlockLevel) { error = "Lv" + def.unlockLevel + "で作れる"; return false; }
-            if (!TrySpend(def.coinCost, def.materialCost)) { error = "コインか素材が足りません"; return false; }
+            if (!TrySpend(def.cost)) { error = "コインか素材が足りません"; return false; }
             Data.armors.Add(new OwnedItem { id = def.id });
             Data.equippedArmor = def.id;
             RefreshPlayer();
@@ -313,9 +340,7 @@ namespace MistIsland
             OwnedItem owned = Data.FindWeapon(def.id);
             if (owned == null) { error = "持っていません"; return false; }
             if (owned.level >= Config.maxEquipLevel) { error = "これ以上強化できません"; return false; }
-            int c, m;
-            ItemUpgradeCost(def.coinCost, def.materialCost, owned.level, out c, out m);
-            if (!TrySpend(c, m)) { error = "コインか素材が足りません"; return false; }
+            if (!TrySpend(ItemUpgradeCost(def.cost, owned.level))) { error = "コインか素材が足りません"; return false; }
             owned.level++;
             RefreshPlayer();
             Toast(def.name + "を +" + (owned.level - 1) + " に強化した");
@@ -329,9 +354,7 @@ namespace MistIsland
             OwnedItem owned = Data.FindArmor(def.id);
             if (owned == null) { error = "持っていません"; return false; }
             if (owned.level >= Config.maxEquipLevel) { error = "これ以上強化できません"; return false; }
-            int c, m;
-            ItemUpgradeCost(def.coinCost, def.materialCost, owned.level, out c, out m);
-            if (!TrySpend(c, m)) { error = "コインか素材が足りません"; return false; }
+            if (!TrySpend(ItemUpgradeCost(def.cost, owned.level))) { error = "コインか素材が足りません"; return false; }
             owned.level++;
             RefreshPlayer();
             Toast(def.name + "を +" + (owned.level - 1) + " に強化した");
@@ -389,10 +412,9 @@ namespace MistIsland
             get { return IsFullyExpanded ? int.MaxValue : Config.expansionUnlockLevels[Data.expansion]; }
         }
 
-        public void ExpansionCost(out int coins, out int materials)
+        public Cost ExpansionCost
         {
-            coins = Formulas.UpgradeCost(Config.expansionBaseCost, Config.expansionCostGrowth, Data.expansion + 1);
-            materials = Formulas.UpgradeCost(Config.expansionBaseMaterialCost, Config.expansionCostGrowth, Data.expansion + 1);
+            get { return (Config.expansionCost ?? new Cost()).Scaled(Math.Pow(Config.expansionCostGrowth, Data.expansion)); }
         }
 
         public bool TryExpand(out string error)
@@ -401,12 +423,11 @@ namespace MistIsland
             if (IsFullyExpanded) { error = "これ以上広げられません"; return false; }
             if (Data.level < NextExpansionLevel) { error = "Lv" + NextExpansionLevel + "で開放"; return false; }
             if (!IsPrepTime) { error = "夜は拡張できません"; return false; }
-            int c, m;
-            ExpansionCost(out c, out m);
-            if (!TrySpend(c, m)) { error = "コインか素材が足りません"; return false; }
+            if (!TrySpend(ExpansionCost)) { error = "コインか素材が足りません"; return false; }
             Data.expansion++;
             Island.Build(Config, Data.expansion);
             Town.RefreshSlots();
+            Rig.FitRadius = Island.Radius;
             Vector3 p = Player.transform.position;
             p.y = Island.HeightAt(p.x, p.z);
             Player.transform.position = p;
@@ -454,8 +475,7 @@ namespace MistIsland
         {
             if (elapsedSeconds < Config.minOfflineSeconds) return;
 
-            float coinsBefore, matsBefore;
-            StoredTotals(out coinsBefore, out matsBefore);
+            Cost storedBefore = StoredTotals();
             float defense = Town.DefensePower;
             int dayBefore = Clock.Day;
 
@@ -476,7 +496,11 @@ namespace MistIsland
 
             Spawner.ClearAll();
             Town.AddOfflineProduction(result.ProductiveSeconds);
-            if (result.Materials > 0) AddMaterials(result.Materials);
+            // 夜に撃退した敵の素材は木材と石材に半分ずつ
+            int offlineWood = (result.Materials + 1) / 2;
+            int offlineStone = result.Materials / 2;
+            AddResource(ResourceType.Wood, offlineWood);
+            AddResource(ResourceType.Stone, offlineStone);
             Clock.SetState(result.Day, (float)result.CycleTime);
             if (!Clock.IsNight || result.Day != dayBefore)
             {
@@ -484,10 +508,9 @@ namespace MistIsland
                 Player.Health.HealFull();
             }
 
-            float coinsAfter, matsAfter;
-            StoredTotals(out coinsAfter, out matsAfter);
-            int coins = Mathf.FloorToInt(coinsAfter - coinsBefore);
-            int facilityMats = Mathf.FloorToInt(matsAfter - matsBefore);
+            Cost storedAfter = StoredTotals();
+            var gained = new Cost();
+            foreach (var t in Cost.All) gained.Set(t, Mathf.Max(0, storedAfter.Get(t) - storedBefore.Get(t)));
 
             var sb = new StringBuilder();
             sb.Append("留守にしていた時間：").Append(FormatDuration(elapsedSeconds));
@@ -507,26 +530,25 @@ namespace MistIsland
                 sb.Append("防衛装置を強化すると、長く放置しても安全になる。\n");
             }
 
-            sb.Append("\n施設の収入：コイン +").Append(coins);
-            if (facilityMats > 0) sb.Append("、素材 +").Append(facilityMats);
+            sb.Append("\n施設に貯まった分：").Append(gained.IsFree ? "なし" : gained.ToText());
             sb.Append("（施設に近づくと受け取れます）");
-            if (result.Materials > 0) sb.Append("\n撃退した敵の素材：+").Append(result.Materials);
+            if (result.Materials > 0) sb.Append("\n撃退した敵の素材：木材 +").Append(offlineWood).Append("、石材 +").Append(offlineStone);
 
             Hud.ShowDialog("おかえりなさい", sb.ToString());
             NotifyChanged();
             Save();
         }
 
-        void StoredTotals(out float coins, out float materials)
+        /// <summary>施設に貯まっている量の合計（整数に切り捨て）。</summary>
+        Cost StoredTotals()
         {
-            coins = 0f;
-            materials = 0f;
+            var total = new Cost();
             foreach (var b in Town.Buildings)
             {
                 if (!b.Def.IsFacility) continue;
-                if (b.Def.producesMaterials) materials += b.Stored;
-                else coins += b.Stored;
+                total.Set(b.Def.produces, total.Get(b.Def.produces) + Mathf.FloorToInt(b.Stored));
             }
+            return total;
         }
 
         static string FormatDuration(double seconds)
@@ -568,9 +590,28 @@ namespace MistIsland
             Save();
         }
 
-        /// <summary>セーブを消して最初からやり直す（テスト用）。</summary>
+        public bool IsGameOver { get; private set; }
+
+        /// <summary>拠点が壊された。セーブを消して、最初からやり直してもらう。</summary>
+        public void GameOver()
+        {
+            if (IsGameOver) return;
+            IsGameOver = true;
+            _saveDisabled = true;
+            SaveSystem.Delete();
+            Time.timeScale = 0f;
+            InputBridge.Reset();
+            Hud.ShowGameOver(
+                "ベースキャンプが襲撃者に壊されてしまった…\n\n" +
+                Clock.Day + "日目の夜、Lv" + Data.level + " まで守り抜いた。\n\n" +
+                "島は霧に飲まれた。最初からやり直そう。",
+                ResetProgress);
+        }
+
+        /// <summary>セーブを消して最初からやり直す。</summary>
         public void ResetProgress()
         {
+            Time.timeScale = 1f;
             _saveDisabled = true;
             SaveSystem.Delete();
             GameBootstrap.Restart();

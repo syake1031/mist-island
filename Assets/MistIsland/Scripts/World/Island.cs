@@ -5,23 +5,25 @@ using UnityEngine.Rendering;
 namespace MistIsland
 {
     /// <summary>
-    /// 霧の海に浮かぶ島の地形。高さは式で決まるので、移動や配置はメッシュを使わずに計算できる。
-    /// 島の拡張では半径を広げて作り直す。海面の高さは 0。
+    /// 霧の海に浮かぶ島の地形。一画面に収まる大きさで、段々の台地と崖が入り組んでいる。
+    /// 高さは式で決まるので、移動や配置はメッシュを使わずに計算できる。
+    /// 台地の形は絶対座標のノイズで決まり、島の拡張で変わるのは海岸近くだけ。海面の高さは 0。
     /// </summary>
     public class Island : MonoBehaviour
     {
         public const float SeaLevel = 0f;
         public const float WalkableHeight = 0.12f;
+        const float BeachHeight = 0.35f;
 
         public static Island Instance { get; private set; }
 
         public float Radius { get; private set; }
-        /// <summary>建物を置ける範囲（町）の半径。</summary>
-        public float TownRadius { get; private set; }
+        public List<SlotInfo> Slots { get; private set; }
 
-        float _landHeight = 1.4f;
-        float[] _phase = new float[8];
-        Vector4[] _mountains = new Vector4[0]; // x, z, 高さ, 半径
+        float _tierHeight = 1.3f;
+        float _tierAmount = 3.2f;
+        float _cliff = 0.3f;
+        float[] _phase = new float[10];
         GameObject _terrain;
         GameObject _decorations;
         Mesh _decorationMesh;
@@ -31,9 +33,10 @@ namespace MistIsland
         static readonly Color WetSand = new Color(0.78f, 0.76f, 0.66f);
         static readonly Color Grass = new Color(0.6f, 0.76f, 0.54f);
         static readonly Color LightGrass = new Color(0.72f, 0.84f, 0.6f);
-        static readonly Color Rock = new Color(0.68f, 0.67f, 0.66f);
+        static readonly Color HighGrass = new Color(0.66f, 0.74f, 0.58f);
+        static readonly Color Rock = new Color(0.66f, 0.64f, 0.66f);
+        static readonly Color DarkRock = new Color(0.55f, 0.54f, 0.58f);
         static readonly Color SeaBed = new Color(0.5f, 0.62f, 0.62f);
-        static readonly Color Snow = new Color(0.94f, 0.95f, 0.98f);
 
         void Awake()
         {
@@ -48,60 +51,23 @@ namespace MistIsland
         public void Build(GameConfig config, int expansion)
         {
             Radius = config.IslandRadius(expansion);
-            TownRadius = config.TownRadius(expansion);
-            _landHeight = config.landHeight;
-            int seed = config.islandSeed;
-            var rng = new System.Random(seed);
+            _tierHeight = config.tierHeight;
+            _tierAmount = config.tierAmount;
+            _cliff = Mathf.Clamp(config.cliffWidth, 0.05f, 0.95f);
+            var rng = new System.Random(config.islandSeed);
             for (int i = 0; i < _phase.Length; i++) _phase[i] = (float)(rng.NextDouble() * Mathf.PI * 2f);
-            BuildMountains(config, seed);
 
             BuildTerrain();
-            BuildDecorations(seed);
-        }
-
-        /// <summary>
-        /// 山の位置は島の大きさに関係なく種から決まる（拡張しても山は動かない）。
-        /// 町の中心から離れた所に、ほぼ均等な向きで並べる。
-        /// </summary>
-        void BuildMountains(GameConfig config, int seed)
-        {
-            var rng = new System.Random(seed * 17 + 3);
-            int count = Mathf.Max(0, config.mountainCount);
-            _mountains = new Vector4[count];
-            float startAngle = (float)(rng.NextDouble() * Mathf.PI * 2f);
-            for (int i = 0; i < count; i++)
-            {
-                float angle = startAngle + i * Mathf.PI * 2f / Mathf.Max(1, count) + (float)(rng.NextDouble() - 0.5) * 0.8f;
-                float dist = Mathf.Lerp(config.mountainMinDistance, config.mountainMaxDistance, (float)rng.NextDouble());
-                float height = Mathf.Lerp(config.mountainMinHeight, config.mountainMaxHeight, (float)rng.NextDouble());
-                float r = Mathf.Lerp(config.mountainMinRadius, config.mountainMaxRadius, (float)rng.NextDouble());
-                _mountains[i] = new Vector4(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist, height, r);
-            }
-        }
-
-        float MountainHeight(float x, float z)
-        {
-            float h = 0f;
-            for (int i = 0; i < _mountains.Length; i++)
-            {
-                Vector4 m = _mountains[i];
-                float dx = x - m.x;
-                float dz = z - m.y;
-                float q = (dx * dx + dz * dz) / (m.w * m.w);
-                if (q > 9f) continue;
-                // 尾根っぽく少し揺らす
-                float ridge = 1f + 0.12f * Mathf.Sin(dx * 0.9f + _phase[i % _phase.Length]) * Mathf.Cos(dz * 0.8f);
-                h = Mathf.Max(h, m.z * Mathf.Exp(-q) * ridge);
-            }
-            return h;
+            Slots = TownLayout.AvailableSlots(this);
+            BuildDecorations(config.islandSeed);
         }
 
         // ---- 高さ ----
 
         public float CoastRadius(float angle)
         {
-            float wobble = 0.08f * Mathf.Sin(3f * angle + _phase[0])
-                         + 0.05f * Mathf.Sin(5f * angle + _phase[1])
+            float wobble = 0.09f * Mathf.Sin(3f * angle + _phase[0])
+                         + 0.06f * Mathf.Sin(5f * angle + _phase[1])
                          + 0.03f * Mathf.Sin(9f * angle + _phase[2]);
             return Radius * (1f + wobble);
         }
@@ -113,28 +79,46 @@ namespace MistIsland
             return d / CoastRadius(Mathf.Atan2(z, x));
         }
 
+        /// <summary>台地の段数（小数）。整数部が段、小数部の終わりで崖になる。</summary>
+        float TierField(float x, float z, float d, float coast)
+        {
+            float n = 0.5f
+                      + 0.30f * Mathf.Sin(x * 0.21f + _phase[3]) * Mathf.Cos(z * 0.19f + _phase[4])
+                      + 0.20f * Mathf.Sin((x - z) * 0.33f + _phase[5])
+                      + 0.12f * Mathf.Cos(x * 0.55f + _phase[6]) * Mathf.Sin(z * 0.6f + _phase[7]);
+            float f = _tierAmount * n + 0.6f;
+            // 拠点のまわりは1段目で平らにする
+            f = Mathf.Lerp(1.5f, f, Smooth(2.5f, 5.5f, d));
+            // 海岸に向かって段を下げていく
+            float mask = 1f - Smooth(coast - 3.5f, coast - 0.3f, d);
+            return Mathf.Max(0f, f * mask);
+        }
+
         public float HeightAt(float x, float z)
         {
-            float t = NormalizedDistance(x, z);
             float d = Mathf.Sqrt(x * x + z * z);
-
-            float land = 1f - Smooth(0.78f, 1f, t);
-            float hills = 0.32f * Mathf.Sin(x * 0.23f + _phase[3]) * Mathf.Cos(z * 0.19f + _phase[4])
-                        + 0.16f * Mathf.Sin((x + z) * 0.41f + _phase[5]);
-            // 町の中心は平らにしておく
-            hills *= Smooth(3f, 8f, d);
-            // 大きなうねりと山。町の中心付近は平らなまま
-            float rolling = 0.9f * Mathf.Sin(x * 0.07f + _phase[6]) * Mathf.Cos(z * 0.06f + _phase[7]);
-            float relief = (rolling + MountainHeight(x, z)) * Smooth(6f, 13f, d);
-            float h = (_landHeight + hills + Mathf.Max(-0.6f, relief)) * land;
-            h -= 0.25f * Smooth(0.9f, 1.05f, t);
-            h -= 1.6f * Smooth(1f, 1.35f, t);
+            float coast = CoastRadius(Mathf.Atan2(z, x));
+            float f = TierField(x, z, d, coast);
+            float k = Mathf.Floor(f);
+            float step = Smooth(1f - _cliff, 1f, f - k);
+            float h = BeachHeight + (k + step) * _tierHeight;
+            // 砂浜から海へ
+            h -= 0.6f * Smooth(coast - 0.3f, coast + 0.6f, d);
+            h -= 1.6f * Smooth(coast + 0.6f, coast + 3.5f, d);
             return h;
         }
 
         public float HeightAt(Vector3 p)
         {
             return HeightAt(p.x, p.z);
+        }
+
+        /// <summary>そこの傾き（高さの変化 / 距離）。</summary>
+        public float SlopeAt(float x, float z, float e = 0.6f)
+        {
+            float sx = Mathf.Abs(HeightAt(x + e, z) - HeightAt(x - e, z));
+            float sz = Mathf.Abs(HeightAt(x, z + e) - HeightAt(x, z - e));
+            return Mathf.Max(sx, sz) / (2f * e);
         }
 
         public bool IsWalkable(float x, float z)
@@ -151,7 +135,7 @@ namespace MistIsland
         /// <summary>沖の地点。敵の出現位置に使う。</summary>
         public Vector3 OffshorePoint(float angle, float extra)
         {
-            float r = CoastRadius(angle) * 1.12f + extra;
+            float r = CoastRadius(angle) + 3f + extra;
             return new Vector3(Mathf.Cos(angle) * r, SeaLevel - 0.35f, Mathf.Sin(angle) * r);
         }
 
@@ -165,8 +149,8 @@ namespace MistIsland
 
         void BuildTerrain()
         {
-            float extent = Radius * 1.45f + 4f;
-            const float step = 0.75f;
+            float extent = Radius * 1.2f + 6f;
+            const float step = 0.35f;
             int n = Mathf.CeilToInt(extent * 2f / step) + 1;
 
             var verts = new List<Vector3>(n * n);
@@ -214,18 +198,18 @@ namespace MistIsland
         Color GroundColor(float x, float z, float h)
         {
             if (h < -0.05f) return Color.Lerp(WetSand, SeaBed, Mathf.Clamp01(-h / 1.2f));
-            if (h < 0.35f) return Color.Lerp(WetSand, Sand, Mathf.Clamp01(h / 0.2f));
+            if (h < BeachHeight + 0.1f) return Color.Lerp(WetSand, Sand, Mathf.Clamp01(h / 0.3f));
 
-            // 斜面は岩、平らなところは草。少し揺らぎを入れる
-            const float e = 0.4f;
-            float slope = Mathf.Abs(HeightAt(x + e, z) - HeightAt(x - e, z)) + Mathf.Abs(HeightAt(x, z + e) - HeightAt(x, z - e));
-            float grassMix = Mathf.Clamp01((h - 0.35f) / 0.3f);
-            float tint = 0.5f + 0.5f * Mathf.Sin(x * 0.5f + _phase[6]) * Mathf.Sin(z * 0.45f + _phase[7]);
+            // 崖は岩、台地の上は草。段ごとに少し色を変える
+            float slope = SlopeAt(x, z, 0.25f);
+            int tier = Mathf.RoundToInt((h - BeachHeight) / _tierHeight);
+            float tint = 0.5f + 0.5f * Mathf.Sin(x * 0.5f + _phase[8]) * Mathf.Sin(z * 0.45f + _phase[9]);
             Color grass = Color.Lerp(Grass, LightGrass, tint);
+            if (tier >= 3) grass = Color.Lerp(grass, HighGrass, 0.6f);
+            float grassMix = Mathf.Clamp01((h - BeachHeight - 0.1f) / 0.4f);
             Color c = Color.Lerp(Sand, grass, grassMix);
-            c = Color.Lerp(c, Rock, Mathf.Clamp01((slope - 0.45f) * 1.5f));
-            // 高いところは雪
-            return Color.Lerp(c, Snow, Mathf.Clamp01((h - 6.5f) / 1.2f));
+            Color rock = (tier % 2 == 0) ? Rock : DarkRock;
+            return Color.Lerp(c, rock, Mathf.Clamp01((slope - 0.5f) * 2f));
         }
 
         // ---- 木と岩 ----
@@ -238,7 +222,7 @@ namespace MistIsland
             _decorations.transform.SetParent(transform, false);
 
             var rng = new System.Random(seed * 31 + 1);
-            int attempts = Mathf.Min(900, Mathf.RoundToInt(Radius * Radius * 0.3f));
+            int attempts = Mathf.Min(500, Mathf.RoundToInt(Radius * Radius * 1.2f));
             var pineDark = new Color(0.4f, 0.58f, 0.46f);
             var pineLight = new Color(0.5f, 0.68f, 0.5f);
             var trunk = new Color(0.55f, 0.45f, 0.38f);
@@ -254,22 +238,23 @@ namespace MistIsland
                 float z = (float)(rng.NextDouble() * 2 - 1) * Radius;
                 float t = NormalizedDistance(x, z);
                 float d = Mathf.Sqrt(x * x + z * z);
-                if (t > 0.8f || d < 4f) continue;
-                if (TownLayout.IsNearAnySlot(new Vector3(x, 0, z), 2.2f, TownRadius)) continue;
+                if (t > 0.85f || d < 4.5f) continue;
+                if (TownLayout.IsNearSlot(Slots, new Vector3(x, 0, z), 2f)) continue;
                 float h = HeightAt(x, z);
-                if (h < 0.5f || h > 6.5f) continue;
+                if (h < 0.6f || SlopeAt(x, z) > 0.4f) continue;
+                if (rng.NextDouble() < 0.45) continue; // まばらにする
 
-                bool isRock = rng.NextDouble() < 0.18;
+                bool isRock = rng.NextDouble() < 0.22;
                 var p = new Vector3(x, h, z);
                 Quaternion yaw = Quaternion.Euler(0, (float)rng.NextDouble() * 360f, 0);
                 if (isRock)
                 {
-                    float s = 0.5f + (float)rng.NextDouble() * 0.7f;
+                    float s = 0.4f + (float)rng.NextDouble() * 0.5f;
                     batch.Add(sphere, Matrix4x4.TRS(p, yaw, new Vector3(s * 1.3f, s * 0.7f, s)), Rock);
                 }
                 else
                 {
-                    float s = 0.8f + (float)rng.NextDouble() * 0.6f;
+                    float s = 0.6f + (float)rng.NextDouble() * 0.5f;
                     Matrix4x4 tree = Matrix4x4.TRS(p, yaw, Vector3.one * s);
                     Color leaf = Color.Lerp(pineDark, pineLight, (float)rng.NextDouble());
                     batch.Add(cylinder, tree * Matrix4x4.TRS(new Vector3(0, 0.25f, 0), Quaternion.identity, new Vector3(0.18f, 0.25f, 0.18f)), trunk);
