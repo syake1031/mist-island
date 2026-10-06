@@ -6,93 +6,70 @@ namespace MistIsland
     public struct SlotInfo
     {
         public int id;
-        public int ring;
         public Vector3 position;
         /// <summary>外向きの向き（度）。柵などの向きに使う。</summary>
         public float yaw;
     }
 
     /// <summary>
-    /// 建物を置ける空き地の配置。町の中心を囲む輪の上に並び、島を拡張するたびに外側の輪が使えるようになる。
-    /// ID は輪と番号から決まるので、島の大きさが変わってもセーブデータとずれない。
+    /// 建物を置ける空き地。島の上に一定間隔の格子を考え、台地の平らなところだけを空き地にする。
+    /// ID は格子の番号から決まるので、島を拡張してもセーブデータとずれない。
     /// </summary>
     public static class TownLayout
     {
         public const float HallRadius = 1.8f;
-        const float FirstRing = 5.5f;
-        const float RingSpacing = 4f;
-        const float SlotSpacing = 4.6f;
-        const int MaxRings = 10;
+        const float Spacing = 3f;
+        const int Offset = 50;
 
-        static List<SlotInfo> _all;
-
-        public static float RingRadius(int ring)
+        public static SlotInfo FromId(int id)
         {
-            return FirstRing + RingSpacing * ring;
-        }
-
-        public static bool RingAvailable(int ring, float townRadius)
-        {
-            return RingRadius(ring) <= townRadius;
-        }
-
-        static List<SlotInfo> All
-        {
-            get
+            int gx = id / 1000 - Offset;
+            int gz = id % 1000 - Offset;
+            var p = new Vector3(gx * Spacing, 0f, gz * Spacing);
+            return new SlotInfo
             {
-                if (_all != null) return _all;
-                _all = new List<SlotInfo>();
-                for (int ring = 0; ring < MaxRings; ring++)
-                {
-                    float r = RingRadius(ring);
-                    int count = Mathf.Max(4, Mathf.FloorToInt(2f * Mathf.PI * r / SlotSpacing));
-                    float offset = (ring % 2) * 0.5f;
-                    for (int j = 0; j < count; j++)
-                    {
-                        float a = (j + offset) / count * Mathf.PI * 2f;
-                        _all.Add(new SlotInfo
-                        {
-                            id = ring * 100 + j,
-                            ring = ring,
-                            position = new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r),
-                            yaw = 90f - a * Mathf.Rad2Deg,
-                        });
-                    }
-                }
-                return _all;
-            }
+                id = id,
+                position = p,
+                yaw = p.sqrMagnitude > 0.01f ? Mathf.Atan2(p.x, p.z) * Mathf.Rad2Deg : 0f,
+            };
         }
 
-        /// <summary>今の島で使える空き地（高さ付き）。海岸に近すぎる所と、山の斜面は除く。</summary>
+        static int ToId(int gx, int gz)
+        {
+            return (gx + Offset) * 1000 + (gz + Offset);
+        }
+
+        /// <summary>今の島で使える空き地（高さ付き）。海岸の近く・崖・拠点のそばは除く。</summary>
         public static List<SlotInfo> AvailableSlots(Island island)
         {
             var list = new List<SlotInfo>();
-            foreach (var s in All)
+            int n = Mathf.CeilToInt(island.Radius * 1.3f / Spacing);
+            for (int gx = -n; gx <= n; gx++)
             {
-                if (!RingAvailable(s.ring, island.TownRadius)) continue;
-                if (island.NormalizedDistance(s.position.x, s.position.z) > 0.82f) continue;
-                float x = s.position.x, z = s.position.z;
-                float h = island.HeightAt(x, z);
-                if (h < 0.4f) continue;
-                const float e = 1.2f;
-                float slope = Mathf.Max(
-                    Mathf.Abs(island.HeightAt(x + e, z) - island.HeightAt(x - e, z)),
-                    Mathf.Abs(island.HeightAt(x, z + e) - island.HeightAt(x, z - e))) / (2f * e);
-                if (slope > 0.35f) continue;
-                var slot = s;
-                slot.position.y = h;
-                list.Add(slot);
+                for (int gz = -n; gz <= n; gz++)
+                {
+                    SlotInfo s = FromId(ToId(gx, gz));
+                    float x = s.position.x, z = s.position.z;
+                    if (s.position.magnitude < HallRadius + 1.6f) continue;
+                    if (island.NormalizedDistance(x, z) > 0.85f) continue;
+                    float h = island.HeightAt(x, z);
+                    if (h < 0.5f) continue;
+                    // 建物の足元が平らなところだけ（崖の途中には置かない）
+                    if (island.SlopeAt(x, z, 0.9f) > 0.2f) continue;
+                    s.position.y = h;
+                    list.Add(s);
+                }
             }
             return list;
         }
 
-        public static bool IsNearAnySlot(Vector3 p, float distance, float townRadius)
+        public static bool IsNearSlot(List<SlotInfo> slots, Vector3 p, float distance)
         {
             p.y = 0f;
             if (p.magnitude < HallRadius + distance) return true;
-            foreach (var s in All)
+            if (slots == null) return false;
+            foreach (var s in slots)
             {
-                if (!RingAvailable(s.ring, townRadius)) continue;
                 Vector3 d = s.position - p;
                 d.y = 0f;
                 if (d.sqrMagnitude < distance * distance) return true;

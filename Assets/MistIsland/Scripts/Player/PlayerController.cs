@@ -71,7 +71,7 @@ namespace MistIsland
 
         public void PlaceAtHall()
         {
-            Vector3 p = new Vector3(0f, 0f, -3.2f);
+            Vector3 p = new Vector3(0f, 0f, -2.8f);
             if (Island.Instance != null) p.y = Island.Instance.HeightAt(p.x, p.z);
             transform.position = p;
             transform.rotation = Quaternion.identity;

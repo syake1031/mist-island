@@ -49,8 +49,8 @@ namespace MistIsland
         public float Range { get { return Def.range + 0.5f * (Level - 1); } }
         public bool IsMaxLevel { get { return Level >= _config.buildingMaxLevel; } }
 
-        public int NextCoinCost { get { return Formulas.UpgradeCost(Def.baseCoinCost, Def.costGrowth, Level + 1); } }
-        public int NextMaterialCost { get { return Formulas.UpgradeCost(Def.baseMaterialCost, Def.costGrowth, Level + 1); } }
+        /// <summary>次のレベルに上げるコスト（建てるときのコストの costGrowth^レベル 倍）。</summary>
+        public Cost NextCost { get { return (Def.cost ?? new Cost()).Scaled(System.Math.Pow(Def.costGrowth, Level)); } }
 
         public void SetLevel(int level)
         {
@@ -112,6 +112,24 @@ namespace MistIsland
                 {
                     _coinMarker.localRotation = Quaternion.Euler(0f, Time.time * 90f, 0f);
                     _coinMarker.localPosition = new Vector3(0f, 3.1f + Mathf.Sin(Time.time * 2f) * 0.15f, 0f);
+                }
+            }
+
+            if (Def.type == BuildingType.Catapult)
+            {
+                _fireTimer -= dt;
+                if (_fireTimer <= 0f)
+                {
+                    Enemy target = Enemy.Nearest(transform.position, Range);
+                    if (target != null)
+                    {
+                        _fireTimer = Def.fireInterval;
+                        Boulder.Throw(transform.position + Vector3.up * 1.6f, target.transform.position, Damage, Def.splashRadius);
+                    }
+                    else
+                    {
+                        _fireTimer = 0.25f;
+                    }
                 }
             }
 
@@ -211,6 +229,55 @@ namespace MistIsland
                     Shapes.Create(PrimitiveType.Cube, v, new Vector3(0, 0.85f, 0.6f), new Vector3(width, 0.14f, 0.12f), DarkWood);
                     break;
                 }
+                case BuildingType.LumberMill:
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(0, 0.6f, 0.5f), new Vector3(1.8f, 1.2f, 1.2f), Wood);
+                    Shapes.Cone(v, new Vector3(0, 1.2f, 0.5f), new Vector3(2.4f, 0.8f, 1.8f), Roof);
+                    for (int i = 0; i < 3; i++)
+                    {
+                        var log = Shapes.Create(PrimitiveType.Cylinder, v, new Vector3(-0.5f + i * 0.5f, 0.2f + (i == 1 ? 0.35f : 0f), -0.8f), new Vector3(0.35f, 0.7f * grow, 0.35f), new Color(0.6f, 0.44f, 0.3f));
+                        log.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                    }
+                    break;
+                case BuildingType.Quarry:
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(-0.5f, 0.35f, 0.3f), new Vector3(0.9f, 0.7f * grow, 0.9f), Stone);
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(0.5f, 0.3f, 0.5f), new Vector3(0.8f, 0.6f, 0.8f), Stone * 0.92f);
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(0.1f, 0.85f, 0.4f), new Vector3(0.7f, 0.5f, 0.7f), Stone * 1.05f);
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(0.6f, 0.9f, -0.7f), new Vector3(0.12f, 1.8f, 0.12f), Wood);
+                    break;
+                case BuildingType.MistWell:
+                {
+                    for (int i = 0; i < 8; i++)
+                    {
+                        float a = i * Mathf.PI * 2f / 8f;
+                        Shapes.Create(PrimitiveType.Cube, v, new Vector3(Mathf.Cos(a) * 0.9f, 0.3f, Mathf.Sin(a) * 0.9f), new Vector3(0.45f, 0.6f, 0.45f), Stone);
+                    }
+                    var crystal = Shapes.Cone(v, new Vector3(0, 0.4f, 0), new Vector3(0.5f, 1.4f * grow, 0.5f), new Color(0.7f, 0.85f, 1f), "Crystal");
+                    var glow = new MaterialPropertyBlock();
+                    glow.SetFloat("_Emission", 0.8f);
+                    crystal.GetComponent<Renderer>().SetPropertyBlock(glow);
+                    break;
+                }
+                case BuildingType.Catapult:
+                {
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(0, 0.25f, 0), new Vector3(1.6f, 0.3f, 1.2f), Wood);
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(-0.6f, 0.8f, 0), new Vector3(0.15f, 1f, 0.15f), DarkWood);
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(0.6f, 0.8f, 0), new Vector3(0.15f, 1f, 0.15f), DarkWood);
+                    var arm = Shapes.Create(PrimitiveType.Cube, v, new Vector3(0, 1.1f, 0.2f), new Vector3(0.14f, 0.14f, 2f * grow), Wood);
+                    arm.transform.localRotation = Quaternion.Euler(-30f, 0f, 0f);
+                    Shapes.Create(PrimitiveType.Sphere, v, new Vector3(0, 1.75f, 1.1f), Vector3.one * 0.4f, Stone);
+                    break;
+                }
+                case BuildingType.Lantern:
+                {
+                    Shapes.Create(PrimitiveType.Cube, v, new Vector3(0, 0.15f, 0), new Vector3(0.9f, 0.3f, 0.9f), Stone);
+                    Shapes.Create(PrimitiveType.Cylinder, v, new Vector3(0, 1.3f * grow, 0), new Vector3(0.15f, 1.2f * grow, 0.15f), DarkWood);
+                    var light = Shapes.Create(PrimitiveType.Sphere, v, new Vector3(0, 2.6f * grow, 0), Vector3.one * 0.6f, new Color(1f, 0.92f, 0.65f), "Light");
+                    var glow = new MaterialPropertyBlock();
+                    glow.SetFloat("_Emission", 1.5f);
+                    light.GetComponent<Renderer>().SetPropertyBlock(glow);
+                    Shapes.Cone(v, new Vector3(0, 2.85f * grow, 0), new Vector3(0.8f, 0.5f, 0.8f), Roof);
+                    break;
+                }
             }
 
             if (Ruined)
@@ -224,7 +291,7 @@ namespace MistIsland
 
             if (Def.IsFacility)
             {
-                Color markerColor = Def.producesMaterials ? new Color(0.62f, 0.8f, 0.95f) : Gold;
+                Color markerColor = ResourceColor(Def.produces);
                 _coinMarker = Shapes.Create(PrimitiveType.Cylinder, _visual, new Vector3(0, 3.1f, 0), new Vector3(0.6f, 0.06f, 0.6f), markerColor, "CoinMarker").transform;
                 var r = _coinMarker.GetComponent<Renderer>();
                 var glow = new MaterialPropertyBlock();
@@ -233,6 +300,18 @@ namespace MistIsland
                 UpdateCoinMarker();
             }
 
+        }
+
+        public static Color ResourceColor(ResourceType type)
+        {
+            switch (type)
+            {
+                case ResourceType.Wood: return new Color(0.72f, 0.52f, 0.36f);
+                case ResourceType.Stone: return new Color(0.75f, 0.75f, 0.78f);
+                case ResourceType.Iron: return new Color(0.55f, 0.62f, 0.72f);
+                case ResourceType.Crystal: return new Color(0.7f, 0.85f, 1f);
+                default: return Gold;
+            }
         }
 
         void UpdateCoinMarker()

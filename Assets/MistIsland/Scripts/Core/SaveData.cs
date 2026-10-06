@@ -23,11 +23,12 @@ namespace MistIsland
     [Serializable]
     public class SaveData
     {
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
 
         public int version = CurrentVersion;
         public int coins;
-        public int materials;
+        /// <summary>木材・石材・鉄・霧の結晶の所持数（ResourceType.Wood から順に）。</summary>
+        public int[] materials = new int[4];
         public int level = 1;
         public int xp;
         public int jobIndex;
@@ -42,6 +43,30 @@ namespace MistIsland
         /// <summary>武器の種類（剣・槍・弓）ごとに装備している武器の ID。</summary>
         public string[] equippedWeapons = { "", "", "" };
         public string equippedArmor = "";
+
+        public int Get(ResourceType type)
+        {
+            if (type == ResourceType.Coins) return coins;
+            int i = (int)type - 1;
+            return materials != null && i < materials.Length ? materials[i] : 0;
+        }
+
+        public void Add(ResourceType type, int amount)
+        {
+            if (type == ResourceType.Coins)
+            {
+                coins += amount;
+                return;
+            }
+            int i = (int)type - 1;
+            if (materials == null || materials.Length < 4)
+            {
+                var old = materials ?? new int[0];
+                materials = new int[4];
+                Array.Copy(old, materials, Math.Min(old.Length, 4));
+            }
+            materials[i] += amount;
+        }
 
         public OwnedItem FindWeapon(string id)
         {

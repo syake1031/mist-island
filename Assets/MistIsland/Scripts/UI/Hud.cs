@@ -161,7 +161,7 @@ namespace MistIsland
             var walletCard = UIFactory.Place(UIFactory.Panel(_safe, "WalletCard", UIFactory.PanelColor).rectTransform, topRight, topRight, new Vector2(-24, -24), new Vector2(430, 150));
             _coinText = UIFactory.Label(walletCard, "", 40, new Color(1f, 0.87f, 0.45f));
             UIFactory.Place(_coinText.rectTransform, topLeft, topLeft, new Vector2(28, -8), new Vector2(380, 66));
-            _materialText = UIFactory.Label(walletCard, "", 40, new Color(0.7f, 0.87f, 1f));
+            _materialText = UIFactory.Label(walletCard, "", 30, new Color(0.7f, 0.87f, 1f));
             UIFactory.Place(_materialText.rectTransform, topLeft, topLeft, new Vector2(28, -74), new Vector2(380, 66));
 
             // レベル・体力
@@ -273,6 +273,7 @@ namespace MistIsland
             UpdateToast();
             UpdateFloats();
 
+            if (_gm.IsGameOver) return;
             if (_camp.IsOpen)
             {
                 if (InputBridge.MenuPressed) _camp.Close();
@@ -313,7 +314,7 @@ namespace MistIsland
         {
             SaveData d = _gm.Data;
             _coinText.text = "コイン " + d.coins;
-            _materialText.text = "素材 " + d.materials;
+            _materialText.text = MaterialsText(d);
             JobDef job = _gm.Config.Job(d.jobIndex);
             if (_gm.IsMaxLevel)
             {
@@ -348,7 +349,7 @@ namespace MistIsland
                     Building b = _interaction.building;
                     UIFactory.SetButtonLabel(_interactButton, b.Def.name + " Lv" + b.Level);
                     if (b.Ruined) info = "壊れている（朝に直る）";
-                    else if (b.Def.IsFacility) info = (b.Def.producesMaterials ? "素材 " : "コイン ") + Mathf.FloorToInt(b.Stored) + " / " + Mathf.FloorToInt(b.Capacity);
+                    else if (b.Def.IsFacility) info = Names.Of(b.Def.produces) + " " + Mathf.FloorToInt(b.Stored) + " / " + Mathf.FloorToInt(b.Capacity);
                     else info = "耐久 " + Mathf.CeilToInt(b.Health.Current) + " / " + Mathf.CeilToInt(b.Health.Max);
                 }
                 else
@@ -437,6 +438,7 @@ namespace MistIsland
             InputBridge.JoystickValue = Vector2.zero;
             InputBridge.ChargeHeld = false;
             _modal.SetActive(true);
+            _modalClose.gameObject.SetActive(true);
             _modal.transform.SetAsLastSibling();
             _toastRoot.transform.SetAsLastSibling();
             _modalTitle.text = title;
@@ -454,6 +456,20 @@ namespace MistIsland
         {
             _modal.SetActive(false);
             _modalRefresh = null;
+            _modalClose.gameObject.SetActive(true);
+        }
+
+        /// <summary>閉じられないウィンドウでゲームオーバーを伝える。</summary>
+        public void ShowGameOver(string body, UnityAction onRestart)
+        {
+            if (_camp.IsOpen) _camp.ForceClose();
+            OpenModal("ゲームオーバー", false, () =>
+            {
+                ClearContent();
+                Paragraph(body, 38);
+                Row("", "最初から始める", true, onRestart, 160f);
+            });
+            _modalClose.gameObject.SetActive(false);
         }
 
         void ClearContent()
@@ -471,9 +487,16 @@ namespace MistIsland
             UIFactory.Row(_modalContent, text, height, new UIFactory.RowButton(buttonLabel, enabled, onClick, 300f));
         }
 
-        static string Cost(int coins, int materials)
+        /// <summary>素材4種類を短く並べた表示。</summary>
+        public static string MaterialsText(SaveData d)
         {
-            return UIFactory.Cost(coins, materials);
+            return "木" + d.Get(ResourceType.Wood) + " 石" + d.Get(ResourceType.Stone) +
+                   " 鉄" + d.Get(ResourceType.Iron) + " 晶" + d.Get(ResourceType.Crystal);
+        }
+
+        public static string WalletText(SaveData d)
+        {
+            return "コイン " + d.coins + "　" + MaterialsText(d);
         }
 
         static void ClearChildren(Transform parent)
@@ -533,10 +556,9 @@ namespace MistIsland
                 else if (d.level < _gm.NextExpansionLevel) label = "Lv" + _gm.NextExpansionLevel + "で開放";
                 else
                 {
-                    int c, m;
-                    _gm.ExpansionCost(out c, out m);
-                    label = "広げる\n<size=24>" + Cost(c, m) + "</size>";
-                    enabled = _gm.IsPrepTime && _gm.CanAfford(c, m);
+                    Cost cost = _gm.ExpansionCost;
+                    label = "広げる\n<size=22>" + cost.ToText() + "</size>";
+                    enabled = _gm.IsPrepTime && _gm.CanAfford(cost);
                 }
                 Row(text, label, enabled, () =>
                 {
@@ -545,17 +567,23 @@ namespace MistIsland
                 });
             }
 
-            float coinPerMin = 0f, matPerMin = 0f;
+            var perMin = new float[Cost.All.Length];
             foreach (var b in _gm.Town.Buildings)
             {
-                if (!b.Def.IsFacility) continue;
-                if (b.Def.producesMaterials) matPerMin += b.IncomePerSecond * 60f;
-                else coinPerMin += b.IncomePerSecond * 60f;
+                if (!b.Def.IsFacility || b.Ruined) continue;
+                perMin[(int)b.Def.produces] += b.IncomePerSecond * 60f;
+            }
+            var income = new System.Text.StringBuilder();
+            foreach (var t in Cost.All)
+            {
+                if (perMin[(int)t] <= 0f) continue;
+                if (income.Length > 0) income.Append("、");
+                income.Append(Names.Of(t)).Append(' ').Append(perMin[(int)t].ToString("0.#")).Append("/分");
             }
             float tonight = Formulas.NightStrength(_gm.Clock.Day, cfg.offlineEnemyBaseStrength, cfg.offlineEnemyGrowthPerDay);
             float defense = _gm.Town.DefensePower;
             Paragraph("<b>町の様子</b>\n" +
-                      "施設の収入：コイン " + coinPerMin.ToString("0") + "/分" + (matPerMin > 0f ? "、素材 " + matPerMin.ToString("0.#") + "/分" : "") + "\n" +
+                      "施設の収入：" + (income.Length > 0 ? income.ToString() : "なし") + "\n" +
                       "防衛力 " + Mathf.RoundToInt(defense) + "　／　放置中の今夜の敵の強さ " + Mathf.RoundToInt(tonight) + "\n" +
                       "<size=28>" + (defense >= tonight ? "今夜は放置しても持ちこたえられそう" : "放置すると今夜は防衛装置が壊されそう。見張り塔や柵を強化しよう") + "</size>", 32);
 
@@ -582,11 +610,11 @@ namespace MistIsland
                 {
                     BuildingDef bd = def;
                     bool unlocked = _gm.Data.level >= def.unlockLevel;
-                    int c = TownManager.BuildCoinCost(def), m = TownManager.BuildMaterialCost(def);
+                    Cost cost = TownManager.BuildCost(def);
                     string kind = def.IsDefense ? "防衛装置" : "施設";
                     string text = "<b>" + def.name + "</b>　<size=26>" + kind + "</size>\n<size=28>" + def.description + "</size>";
-                    string label = unlocked ? "建てる\n<size=24>" + Cost(c, m) + "</size>" : "Lv" + def.unlockLevel + "で開放";
-                    Row(text, label, unlocked && _gm.IsPrepTime && _gm.CanAfford(c, m), () =>
+                    string label = unlocked ? "建てる\n<size=22>" + cost.ToText() + "</size>" : "Lv" + def.unlockLevel + "で開放";
+                    Row(text, label, unlocked && _gm.IsPrepTime && _gm.CanAfford(cost), () =>
                     {
                         string err;
                         bool ok = _gm.Town.TryBuild(slot, bd, out err);
@@ -607,7 +635,7 @@ namespace MistIsland
                 text += "耐久 " + Mathf.CeilToInt(b.Health.Current) + " / " + Mathf.CeilToInt(b.Health.Max) + (b.Ruined ? "（壊れている・朝に直る）" : "") + "\n";
                 if (b.Def.IsFacility)
                 {
-                    string unit = b.Def.producesMaterials ? "素材" : "コイン";
+                    string unit = Names.Of(b.Def.produces);
                     text += "収入 " + (b.IncomePerSecond * 60f).ToString("0.#") + " " + unit + "/分　上限 " + Mathf.FloorToInt(b.Capacity) + "\n";
                     text += "貯まっている " + unit + "：" + Mathf.FloorToInt(b.Stored) + "（近づくと受け取れる）";
                 }
@@ -624,9 +652,9 @@ namespace MistIsland
                 }
                 else
                 {
-                    int c = b.NextCoinCost, m = b.NextMaterialCost;
+                    Cost cost = b.NextCost;
                     Row("<b>Lv" + (b.Level + 1) + " に強化</b>\n<size=28>" + (b.Def.IsFacility ? "収入と上限が増える" : "耐久と防衛力が上がる") + "</size>",
-                        "強化\n<size=24>" + Cost(c, m) + "</size>", _gm.IsPrepTime && _gm.CanAfford(c, m), () =>
+                        "強化\n<size=22>" + cost.ToText() + "</size>", _gm.IsPrepTime && _gm.CanAfford(cost), () =>
                         {
                             string err;
                             Act(_gm.Town.TryUpgrade(b, out err), err);

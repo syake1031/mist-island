@@ -38,9 +38,8 @@ namespace MistIsland
         public WeaponType type;
         public float damage;
         public int unlockLevel = 1;
-        [Tooltip("0 なら最初から持っている")]
-        public int coinCost;
-        public int materialCost;
+        [Tooltip("無料なら最初から持っている")]
+        public Cost cost = new Cost();
     }
 
     [Serializable]
@@ -52,8 +51,7 @@ namespace MistIsland
         public float damageReduction;
         public float bonusHp;
         public int unlockLevel = 1;
-        public int coinCost;
-        public int materialCost;
+        public Cost cost = new Cost();
     }
 
     [Serializable]
@@ -68,9 +66,8 @@ namespace MistIsland
         public float attackCooldown = 1.2f;
         public float scale = 1f;
         public int xp;
-        public int materialMin;
-        public int materialMax;
-        public int coins;
+        [Tooltip("倒したときの落とし物。コインはそのまま、素材は 0〜この数のあいだ")]
+        public Cost drops = new Cost();
         public float spawnWeight = 1f;
         [Tooltip("プレイヤーより建物を優先して狙う")]
         public bool prefersStructures;
@@ -84,13 +81,13 @@ namespace MistIsland
         public string name;
         [TextArea] public string description;
         public int unlockLevel = 1;
-        public int baseCoinCost;
-        public int baseMaterialCost;
+        [Tooltip("建てるときのコスト。強化するたびに costGrowth 倍になる")]
+        public Cost cost = new Cost();
         public float costGrowth = 1.6f;
         [Header("収入（施設）")]
         public float incomePerMinute;
-        [Tooltip("コインではなく素材を生む")]
-        public bool producesMaterials;
+        [Tooltip("何が貯まるか")]
+        public ResourceType produces = ResourceType.Coins;
         [Header("耐久")]
         public float maxHp = 100f;
         public float hpPerLevel = 30f;
@@ -100,6 +97,10 @@ namespace MistIsland
         public float range;
         public float damage;
         public float fireInterval;
+        [Tooltip("投石台：着弾したところの周りにもダメージ")]
+        public float splashRadius;
+        [Tooltip("霧払いの灯：範囲内の敵の速さの倍率（1 で変化なし）")]
+        public float slowFactor = 1f;
 
         public bool IsDefense { get { return defensePowerPerLevel > 0f; } }
         public bool IsFacility { get { return incomePerMinute > 0f; } }
@@ -124,28 +125,20 @@ namespace MistIsland
         public float daySeconds = 180f;
         public float nightSeconds = 180f;
 
-        [Header("島")]
+        [Header("島（一画面に収まる大きさ。段々の台地と崖がある）")]
         public int islandSeed = 7;
-        public float baseIslandRadius = 30f;
-        public float radiusPerExpansion = 6f;
-        [Tooltip("建物を置ける範囲（町）の半径")]
-        public float townBaseRadius = 12f;
-        public float townRadiusPerExpansion = 4f;
+        public float baseIslandRadius = 13f;
+        public float radiusPerExpansion = 2.5f;
         [Tooltip("拡張 n 段目が開放されるレベル")]
         public int[] expansionUnlockLevels = { 3, 6, 9, 12, 15 };
-        public int expansionBaseCost = 200;
-        public int expansionBaseMaterialCost = 20;
-        public float expansionCostGrowth = 2f;
-        public float landHeight = 1.4f;
-        [Header("山")]
-        public int mountainCount = 5;
-        public float mountainMinHeight = 4f;
-        public float mountainMaxHeight = 9f;
-        [Tooltip("島の中心から山までの距離")]
-        public float mountainMinDistance = 13f;
-        public float mountainMaxDistance = 25f;
-        public float mountainMinRadius = 4f;
-        public float mountainMaxRadius = 7f;
+        public Cost expansionCost = Cost.Of(150, wood: 20, stone: 20);
+        public float expansionCostGrowth = 1.8f;
+        [Tooltip("台地1段の高さ")]
+        public float tierHeight = 1.3f;
+        [Tooltip("台地の段数の目安（大きいほど高くなる）")]
+        public float tierAmount = 3.2f;
+        [Tooltip("崖の険しさ（0〜1、小さいほど切り立つ）")]
+        public float cliffWidth = 0.25f;
 
         [Header("プレイヤー")]
         public float baseMoveSpeed = 4.5f;
@@ -194,37 +187,49 @@ namespace MistIsland
         public WeaponItemDef[] weaponItems =
         {
             new WeaponItemDef { id = "sword_wood", name = "木の剣", type = WeaponType.Sword, damage = 12f, unlockLevel = 1 },
-            new WeaponItemDef { id = "sword_iron", name = "鉄の剣", type = WeaponType.Sword, damage = 18f, unlockLevel = 4, coinCost = 120, materialCost = 15 },
-            new WeaponItemDef { id = "sword_mist", name = "霧鋼の剣", type = WeaponType.Sword, damage = 28f, unlockLevel = 9, coinCost = 450, materialCost = 50 },
+            new WeaponItemDef { id = "sword_stone", name = "石の大剣", type = WeaponType.Sword, damage = 16f, unlockLevel = 3, cost = Cost.Of(60, wood: 5, stone: 12) },
+            new WeaponItemDef { id = "sword_iron", name = "鉄の剣", type = WeaponType.Sword, damage = 22f, unlockLevel = 5, cost = Cost.Of(150, wood: 5, iron: 12) },
+            new WeaponItemDef { id = "sword_mist", name = "霧鋼の剣", type = WeaponType.Sword, damage = 32f, unlockLevel = 9, cost = Cost.Of(400, iron: 25, crystal: 6) },
+            new WeaponItemDef { id = "sword_crystal", name = "結晶の剣", type = WeaponType.Sword, damage = 46f, unlockLevel = 14, cost = Cost.Of(900, iron: 30, crystal: 25) },
+
             new WeaponItemDef { id = "spear_wood", name = "木の槍", type = WeaponType.Spear, damage = 15f, unlockLevel = 1 },
-            new WeaponItemDef { id = "spear_iron", name = "鉄の槍", type = WeaponType.Spear, damage = 22f, unlockLevel = 5, coinCost = 150, materialCost = 18 },
-            new WeaponItemDef { id = "spear_mist", name = "霧鋼の槍", type = WeaponType.Spear, damage = 34f, unlockLevel = 10, coinCost = 520, materialCost = 55 },
+            new WeaponItemDef { id = "spear_stone", name = "石の槍", type = WeaponType.Spear, damage = 19f, unlockLevel = 4, cost = Cost.Of(80, wood: 10, stone: 10) },
+            new WeaponItemDef { id = "spear_iron", name = "鉄の槍", type = WeaponType.Spear, damage = 26f, unlockLevel = 6, cost = Cost.Of(180, wood: 8, iron: 14) },
+            new WeaponItemDef { id = "spear_mist", name = "霧鋼の槍", type = WeaponType.Spear, damage = 38f, unlockLevel = 10, cost = Cost.Of(450, iron: 28, crystal: 8) },
+            new WeaponItemDef { id = "spear_crystal", name = "結晶の槍", type = WeaponType.Spear, damage = 54f, unlockLevel = 15, cost = Cost.Of(1000, iron: 32, crystal: 28) },
+
             new WeaponItemDef { id = "bow_short", name = "短弓", type = WeaponType.Bow, damage = 10f, unlockLevel = 1 },
-            new WeaponItemDef { id = "bow_long", name = "長弓", type = WeaponType.Bow, damage = 15f, unlockLevel = 6, coinCost = 160, materialCost = 18 },
-            new WeaponItemDef { id = "bow_mist", name = "霧の弓", type = WeaponType.Bow, damage = 24f, unlockLevel = 11, coinCost = 560, materialCost = 60 },
+            new WeaponItemDef { id = "bow_composite", name = "合成弓", type = WeaponType.Bow, damage = 13f, unlockLevel = 5, cost = Cost.Of(90, wood: 15, stone: 4) },
+            new WeaponItemDef { id = "bow_long", name = "長弓", type = WeaponType.Bow, damage = 18f, unlockLevel = 7, cost = Cost.Of(200, wood: 20, iron: 8) },
+            new WeaponItemDef { id = "bow_mist", name = "霧の弓", type = WeaponType.Bow, damage = 27f, unlockLevel = 11, cost = Cost.Of(500, wood: 20, crystal: 10) },
+            new WeaponItemDef { id = "bow_crystal", name = "結晶の弓", type = WeaponType.Bow, damage = 40f, unlockLevel = 16, cost = Cost.Of(1100, iron: 20, crystal: 30) },
         };
         public ArmorItemDef[] armorItems =
         {
             new ArmorItemDef { id = "armor_cloth", name = "布の服", damageReduction = 0f, bonusHp = 0f, unlockLevel = 1 },
-            new ArmorItemDef { id = "armor_leather", name = "革の鎧", damageReduction = 0.1f, bonusHp = 15f, unlockLevel = 2, coinCost = 60, materialCost = 8 },
-            new ArmorItemDef { id = "armor_iron", name = "鉄の鎧", damageReduction = 0.2f, bonusHp = 40f, unlockLevel = 6, coinCost = 220, materialCost = 30 },
-            new ArmorItemDef { id = "armor_mist", name = "霧鋼の鎧", damageReduction = 0.32f, bonusHp = 80f, unlockLevel = 10, coinCost = 600, materialCost = 70 },
+            new ArmorItemDef { id = "armor_leather", name = "革の鎧", damageReduction = 0.08f, bonusHp = 15f, unlockLevel = 2, cost = Cost.Of(50, wood: 6) },
+            new ArmorItemDef { id = "armor_stone", name = "石鱗の鎧", damageReduction = 0.14f, bonusHp = 30f, unlockLevel = 4, cost = Cost.Of(100, stone: 15) },
+            new ArmorItemDef { id = "armor_iron", name = "鉄の鎧", damageReduction = 0.22f, bonusHp = 50f, unlockLevel = 7, cost = Cost.Of(250, iron: 20) },
+            new ArmorItemDef { id = "armor_mist", name = "霧鋼の鎧", damageReduction = 0.32f, bonusHp = 90f, unlockLevel = 11, cost = Cost.Of(600, iron: 30, crystal: 10) },
+            new ArmorItemDef { id = "armor_crystal", name = "結晶の鎧", damageReduction = 0.42f, bonusHp = 140f, unlockLevel = 16, cost = Cost.Of(1200, iron: 30, crystal: 35) },
         };
         public int maxEquipLevel = 10;
         public float weaponDamagePerLevel = 0.12f;
         public float armorPerLevel = 0.08f;
         public float maxArmorReduction = 0.6f;
-        public int upgradeCoinBase = 30;
-        public int upgradeMaterialBase = 4;
+        [Tooltip("装備強化のコスト：作るときのコストのこの割合 ＋ 下の基本コスト（レベルごとに equipCostGrowth 倍）")]
+        public float upgradeCostRatio = 0.3f;
+        public Cost upgradeBaseCost = Cost.Of(30, wood: 3);
         public float equipCostGrowth = 1.5f;
 
         [Header("敵")]
         public EnemyDef[] enemies =
         {
-            new EnemyDef { name = "霧の小鬼", unlockDay = 1, hp = 24f, damage = 6f, speed = 2.2f, attackRange = 0.9f, attackCooldown = 1.1f, scale = 0.8f, xp = 3, materialMin = 0, materialMax = 1, coins = 1, spawnWeight = 1f, color = new Color(0.35f, 0.33f, 0.48f) },
-            new EnemyDef { name = "霧の走り屋", unlockDay = 3, hp = 16f, damage = 5f, speed = 3.6f, attackRange = 0.9f, attackCooldown = 0.8f, scale = 0.7f, xp = 4, materialMin = 0, materialMax = 2, coins = 1, spawnWeight = 0.8f, color = new Color(0.45f, 0.36f, 0.55f) },
-            new EnemyDef { name = "霧の重装兵", unlockDay = 5, hp = 90f, damage = 14f, speed = 1.5f, attackRange = 1.2f, attackCooldown = 1.6f, scale = 1.2f, xp = 10, materialMin = 2, materialMax = 4, coins = 3, spawnWeight = 0.45f, prefersStructures = true, color = new Color(0.28f, 0.3f, 0.38f) },
-            new EnemyDef { name = "霧の巨人", unlockDay = 10, hp = 320f, damage = 30f, speed = 1.2f, attackRange = 1.8f, attackCooldown = 2.2f, scale = 1.9f, xp = 40, materialMin = 6, materialMax = 10, coins = 10, spawnWeight = 0.15f, prefersStructures = true, color = new Color(0.22f, 0.22f, 0.3f) },
+            new EnemyDef { name = "霧の小鬼", unlockDay = 1, hp = 24f, damage = 6f, speed = 2.2f, attackRange = 0.9f, attackCooldown = 1.1f, scale = 0.8f, xp = 3, drops = Cost.Of(1, wood: 2, stone: 1), spawnWeight = 1f, color = new Color(0.35f, 0.33f, 0.48f) },
+            new EnemyDef { name = "霧の走り屋", unlockDay = 3, hp = 16f, damage = 5f, speed = 3.6f, attackRange = 0.9f, attackCooldown = 0.8f, scale = 0.7f, xp = 4, drops = Cost.Of(1, wood: 3), spawnWeight = 0.8f, color = new Color(0.45f, 0.36f, 0.55f) },
+            new EnemyDef { name = "霧の重装兵", unlockDay = 5, hp = 90f, damage = 14f, speed = 1.5f, attackRange = 1.2f, attackCooldown = 1.6f, scale = 1.2f, xp = 10, drops = Cost.Of(3, stone: 3, iron: 3), spawnWeight = 0.45f, prefersStructures = true, color = new Color(0.28f, 0.3f, 0.38f) },
+            new EnemyDef { name = "霧の術師", unlockDay = 7, hp = 40f, damage = 10f, speed = 2.4f, attackRange = 1f, attackCooldown = 1.2f, scale = 0.9f, xp = 8, drops = Cost.Of(2, iron: 1, crystal: 1), spawnWeight = 0.35f, color = new Color(0.4f, 0.48f, 0.62f) },
+            new EnemyDef { name = "霧の巨人", unlockDay = 10, hp = 320f, damage = 30f, speed = 1.2f, attackRange = 1.8f, attackCooldown = 2.2f, scale = 1.9f, xp = 40, drops = Cost.Of(10, stone: 6, iron: 6, crystal: 4), spawnWeight = 0.15f, prefersStructures = true, color = new Color(0.22f, 0.22f, 0.3f) },
         };
 
         [Header("敵の出現")]
@@ -246,11 +251,16 @@ namespace MistIsland
         public float facilityCapMinutes = 180f;
         public BuildingDef[] buildings =
         {
-            new BuildingDef { type = BuildingType.Bank, name = "銀行", description = "コインが少しずつ貯まる", unlockLevel = 1, baseCoinCost = 30, baseMaterialCost = 0, costGrowth = 1.7f, incomePerMinute = 12f, maxHp = 120f, hpPerLevel = 30f },
-            new BuildingDef { type = BuildingType.Watchtower, name = "見張り塔", description = "近づく敵に矢を放つ", unlockLevel = 2, baseCoinCost = 60, baseMaterialCost = 8, costGrowth = 1.6f, maxHp = 150f, hpPerLevel = 50f, defensePowerPerLevel = 5f, range = 8f, damage = 8f, fireInterval = 1.4f },
-            new BuildingDef { type = BuildingType.Fence, name = "柵", description = "頑丈で敵を引きつける", unlockLevel = 4, baseCoinCost = 40, baseMaterialCost = 12, costGrowth = 1.5f, maxHp = 400f, hpPerLevel = 150f, defensePowerPerLevel = 3f },
-            new BuildingDef { type = BuildingType.Farm, name = "畑", description = "銀行より多くのコインを生む", unlockLevel = 5, baseCoinCost = 150, baseMaterialCost = 10, costGrowth = 1.7f, incomePerMinute = 30f, maxHp = 100f, hpPerLevel = 30f },
-            new BuildingDef { type = BuildingType.Mine, name = "鉱山", description = "素材が少しずつ貯まる", unlockLevel = 8, baseCoinCost = 400, baseMaterialCost = 30, costGrowth = 1.8f, incomePerMinute = 4f, producesMaterials = true, maxHp = 200f, hpPerLevel = 60f },
+            new BuildingDef { type = BuildingType.Bank, name = "銀行", description = "コインが少しずつ貯まる", unlockLevel = 1, cost = Cost.Of(30), costGrowth = 1.7f, incomePerMinute = 12f, maxHp = 120f, hpPerLevel = 30f },
+            new BuildingDef { type = BuildingType.LumberMill, name = "伐採所", description = "木材が少しずつ貯まる", unlockLevel = 1, cost = Cost.Of(40), costGrowth = 1.6f, incomePerMinute = 3f, produces = ResourceType.Wood, maxHp = 120f, hpPerLevel = 30f },
+            new BuildingDef { type = BuildingType.Watchtower, name = "見張り塔", description = "近づく敵に矢を放つ", unlockLevel = 2, cost = Cost.Of(60, wood: 10), costGrowth = 1.6f, maxHp = 150f, hpPerLevel = 50f, defensePowerPerLevel = 5f, range = 8f, damage = 8f, fireInterval = 1.4f },
+            new BuildingDef { type = BuildingType.Quarry, name = "石切り場", description = "石材が少しずつ貯まる", unlockLevel = 3, cost = Cost.Of(80, wood: 10), costGrowth = 1.6f, incomePerMinute = 3f, produces = ResourceType.Stone, maxHp = 160f, hpPerLevel = 40f },
+            new BuildingDef { type = BuildingType.Fence, name = "柵", description = "頑丈で敵を引きつける", unlockLevel = 4, cost = Cost.Of(40, wood: 12, stone: 4), costGrowth = 1.5f, maxHp = 400f, hpPerLevel = 150f, defensePowerPerLevel = 3f },
+            new BuildingDef { type = BuildingType.Farm, name = "畑", description = "銀行より多くのコインを生む", unlockLevel = 5, cost = Cost.Of(150, wood: 15), costGrowth = 1.7f, incomePerMinute = 30f, maxHp = 100f, hpPerLevel = 30f },
+            new BuildingDef { type = BuildingType.Catapult, name = "投石台", description = "岩を投げ、着弾点の周りの敵をまとめて攻撃", unlockLevel = 7, cost = Cost.Of(200, wood: 25, stone: 20), costGrowth = 1.6f, maxHp = 180f, hpPerLevel = 60f, defensePowerPerLevel = 8f, range = 10f, damage = 18f, fireInterval = 3.2f, splashRadius = 2.2f },
+            new BuildingDef { type = BuildingType.Mine, name = "鉱山", description = "鉄が少しずつ貯まる", unlockLevel = 8, cost = Cost.Of(300, wood: 20, stone: 25), costGrowth = 1.8f, incomePerMinute = 2f, produces = ResourceType.Iron, maxHp = 200f, hpPerLevel = 60f },
+            new BuildingDef { type = BuildingType.Lantern, name = "霧払いの灯", description = "周りの敵の動きを遅くする", unlockLevel = 10, cost = Cost.Of(350, stone: 20, iron: 10), costGrowth = 1.6f, maxHp = 140f, hpPerLevel = 40f, defensePowerPerLevel = 6f, range = 6f, slowFactor = 0.5f },
+            new BuildingDef { type = BuildingType.MistWell, name = "霧の井戸", description = "霧の結晶がほんの少しずつ貯まる", unlockLevel = 12, cost = Cost.Of(600, stone: 30, iron: 20), costGrowth = 1.8f, incomePerMinute = 0.8f, produces = ResourceType.Crystal, maxHp = 200f, hpPerLevel = 60f },
         };
 
         [Header("放置")]
@@ -259,6 +269,7 @@ namespace MistIsland
         public float offlineEnemyBaseStrength = 6f;
         [Tooltip("1日ごとに夜の敵の強さが何倍になるか")]
         public float offlineEnemyGrowthPerDay = 1.18f;
+        [Tooltip("放置中に夜を守り切ったときの素材（木材と石材に半分ずつ）")]
         public float offlineMaterialsPerNightBase = 4f;
         public float offlineMaterialsPerDay = 1.5f;
         [Tooltip("これより短い不在は放置として扱わない（秒）")]
@@ -266,7 +277,8 @@ namespace MistIsland
 
         [Header("セーブ")]
         public float autosaveSeconds = 20f;
-        public int startingCoins = 30;
+        public int startingCoins = 40;
+        public int startingWood = 10;
 
         public DayDurations Durations
         {
@@ -303,7 +315,7 @@ namespace MistIsland
         public WeaponItemDef StarterWeapon(WeaponType type)
         {
             foreach (var w in weaponItems)
-                if (w.type == type && w.coinCost <= 0 && w.materialCost <= 0) return w;
+                if (w.type == type && (w.cost == null || w.cost.IsFree)) return w;
             foreach (var w in weaponItems)
                 if (w.type == type) return w;
             return null;
@@ -314,7 +326,7 @@ namespace MistIsland
             get
             {
                 foreach (var a in armorItems)
-                    if (a.coinCost <= 0 && a.materialCost <= 0) return a;
+                    if (a.cost == null || a.cost.IsFree) return a;
                 return armorItems.Length > 0 ? armorItems[0] : null;
             }
         }
@@ -329,11 +341,6 @@ namespace MistIsland
         public float IslandRadius(int expansion)
         {
             return baseIslandRadius + radiusPerExpansion * expansion;
-        }
-
-        public float TownRadius(int expansion)
-        {
-            return townBaseRadius + townRadiusPerExpansion * expansion;
         }
 
         public int MaxExpansion { get { return expansionUnlockLevels.Length; } }
