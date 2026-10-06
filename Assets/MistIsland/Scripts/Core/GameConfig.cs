@@ -127,7 +127,7 @@ namespace MistIsland
 
         [Header("島（一画面に収まる大きさ。段々の台地と崖がある）")]
         public int islandSeed = 7;
-        public float baseIslandRadius = 13f;
+        public float baseIslandRadius = 16f;
         public float radiusPerExpansion = 2.5f;
         [Tooltip("拡張 n 段目が開放されるレベル")]
         public int[] expansionUnlockLevels = { 3, 6, 9, 12, 15 };
@@ -139,6 +139,10 @@ namespace MistIsland
         public float tierAmount = 3.2f;
         [Tooltip("崖の険しさ（0〜1、小さいほど切り立つ）")]
         public float cliffWidth = 0.25f;
+        [Tooltip("地形の細かさ（小さいほど台地が広くなる）")]
+        public float terrainScale = 0.55f;
+        [Tooltip("拠点のまわりの平らな広場の半径")]
+        public float plazaRadius = 5.5f;
 
         [Header("プレイヤー")]
         public float baseMoveSpeed = 4.5f;

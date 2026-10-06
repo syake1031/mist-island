@@ -33,30 +33,31 @@ namespace MistIsland
             }
         }
 
+        // 昼は霧を薄くして明るく、夜は霧を濃く。霧の距離はカメラ距離 34 を基準にした値
         static readonly Palette Dawn = new Palette
         {
-            sun = new Color(0.95f, 0.72f, 0.6f), ambient = new Color(0.55f, 0.52f, 0.6f),
-            fog = new Color(0.86f, 0.8f, 0.8f), fogStart = 28f, fogEnd = 75f, fogHeight = 2.2f, sunElevation = 18f,
+            sun = new Color(0.86f, 0.62f, 0.5f), ambient = new Color(0.4f, 0.38f, 0.45f),
+            fog = new Color(0.9f, 0.82f, 0.8f), fogStart = 50f, fogEnd = 130f, fogHeight = 1.4f, sunElevation = 22f,
         };
         static readonly Palette Morning = new Palette
         {
-            sun = new Color(0.92f, 0.86f, 0.76f), ambient = new Color(0.58f, 0.6f, 0.64f),
-            fog = new Color(0.84f, 0.87f, 0.88f), fogStart = 30f, fogEnd = 85f, fogHeight = 1.6f, sunElevation = 40f,
+            sun = new Color(0.82f, 0.74f, 0.62f), ambient = new Color(0.42f, 0.43f, 0.48f),
+            fog = new Color(0.82f, 0.88f, 0.92f), fogStart = 60f, fogEnd = 150f, fogHeight = 0.8f, sunElevation = 45f,
         };
         static readonly Palette Noon = new Palette
         {
-            sun = new Color(0.9f, 0.9f, 0.86f), ambient = new Color(0.62f, 0.66f, 0.7f),
-            fog = new Color(0.8f, 0.86f, 0.9f), fogStart = 32f, fogEnd = 95f, fogHeight = 1.2f, sunElevation = 60f,
+            sun = new Color(0.8f, 0.77f, 0.7f), ambient = new Color(0.43f, 0.46f, 0.5f),
+            fog = new Color(0.76f, 0.87f, 0.95f), fogStart = 70f, fogEnd = 170f, fogHeight = 0.6f, sunElevation = 60f,
         };
         static readonly Palette Dusk = new Palette
         {
-            sun = new Color(0.95f, 0.6f, 0.5f), ambient = new Color(0.45f, 0.42f, 0.55f),
-            fog = new Color(0.7f, 0.62f, 0.72f), fogStart = 28f, fogEnd = 75f, fogHeight = 2f, sunElevation = 15f,
+            sun = new Color(0.86f, 0.55f, 0.45f), ambient = new Color(0.36f, 0.33f, 0.45f),
+            fog = new Color(0.72f, 0.62f, 0.72f), fogStart = 45f, fogEnd = 120f, fogHeight = 1.6f, sunElevation = 18f,
         };
         static readonly Palette Night = new Palette
         {
-            sun = new Color(0.45f, 0.52f, 0.75f), ambient = new Color(0.22f, 0.25f, 0.38f),
-            fog = new Color(0.24f, 0.28f, 0.4f), fogStart = 26f, fogEnd = 65f, fogHeight = 2.6f, sunElevation = 35f,
+            sun = new Color(0.36f, 0.43f, 0.64f), ambient = new Color(0.2f, 0.23f, 0.36f),
+            fog = new Color(0.22f, 0.26f, 0.38f), fogStart = 24f, fogEnd = 90f, fogHeight = 2.2f, sunElevation = 40f,
         };
 
         // (時間帯, その時間帯の中での位置 0..1, 色) のキー

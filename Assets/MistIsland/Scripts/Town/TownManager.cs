@@ -71,6 +71,7 @@ namespace MistIsland
             if (_hallVisual != null) Destroy(_hallVisual.gameObject);
             _hallVisual = new GameObject("Visual").transform;
             _hallVisual.SetParent(Hall.transform, false);
+            _hallVisual.localScale = Vector3.one * 1.6f;
             // ベースキャンプ：テント・たき火・道具箱・旗
             var canvas = new Color(0.95f, 0.9f, 0.8f);
             var stripe = new Color(0.86f, 0.52f, 0.44f);
@@ -135,7 +136,7 @@ namespace MistIsland
                 GameObject marker;
                 if (!_markers.TryGetValue(s.id, out marker) || marker == null)
                 {
-                    marker = Shapes.Create(PrimitiveType.Cylinder, transform, s.position + Vector3.up * 0.03f, new Vector3(2.2f, 0.03f, 2.2f), new Color(0.9f, 0.88f, 0.78f), "Slot" + s.id);
+                    marker = Shapes.Create(PrimitiveType.Cylinder, transform, s.position + Vector3.up * 0.03f, new Vector3(4.2f, 0.03f, 4.2f), new Color(0.95f, 0.92f, 0.8f), "Slot" + s.id);
                     _markers[s.id] = marker;
                 }
                 else
@@ -269,7 +270,7 @@ namespace MistIsland
                 if (_buildings.ContainsKey(s.id)) continue;
                 Vector3 d = s.position - pos;
                 d.y = 0f;
-                float dist = d.magnitude - 1f;
+                float dist = d.magnitude - 2.2f;
                 if (dist >= best) continue;
                 best = dist;
                 result = new Interaction { valid = true, slot = s };
@@ -279,7 +280,7 @@ namespace MistIsland
             {
                 Vector3 d = b.transform.position - pos;
                 d.y = 0f;
-                float dist = d.magnitude - 1f;
+                float dist = d.magnitude - b.Health.Radius;
                 if (dist >= best) continue;
                 best = dist;
                 result = new Interaction { valid = true, slot = b.Slot, building = b };
@@ -303,7 +304,7 @@ namespace MistIsland
                 if (!b.Def.IsFacility || b.Ruined || b.Stored < 1f) continue;
                 Vector3 d = b.transform.position - p;
                 d.y = 0f;
-                if (d.magnitude > r + 1f) continue;
+                if (d.magnitude > r + b.Health.Radius) continue;
                 int amount = b.TakeStored();
                 if (amount <= 0) continue;
                 Vector3 at = b.transform.position + Vector3.up * 3f;

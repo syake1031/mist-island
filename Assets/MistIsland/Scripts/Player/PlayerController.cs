@@ -35,6 +35,7 @@ namespace MistIsland
 
             Model = new GameObject("Model").transform;
             Model.SetParent(transform, false);
+            Shapes.BlobShadow(Model, 0.55f);
             Combat = gameObject.AddComponent<PlayerCombat>();
             ApplyStats(stats);
             PlaceAtHall();
@@ -58,7 +59,11 @@ namespace MistIsland
 
         void BuildModel()
         {
-            for (int i = Model.childCount - 1; i >= 0; i--) Destroy(Model.GetChild(i).gameObject);
+            for (int i = Model.childCount - 1; i >= 0; i--)
+            {
+                Transform child = Model.GetChild(i);
+                if (child.name != "BlobShadow") Destroy(child.gameObject);
+            }
             JobDef job = Stats.job;
             var skin = new Color(0.98f, 0.86f, 0.76f);
             _body = Shapes.Create(PrimitiveType.Capsule, Model, new Vector3(0, 0.6f, 0), new Vector3(0.6f, 0.5f, 0.6f), job.color, "Body").transform;
@@ -71,7 +76,7 @@ namespace MistIsland
 
         public void PlaceAtHall()
         {
-            Vector3 p = new Vector3(0f, 0f, -2.8f);
+            Vector3 p = new Vector3(0f, 0f, -4.5f);
             if (Island.Instance != null) p.y = Island.Instance.HeightAt(p.x, p.z);
             transform.position = p;
             transform.rotation = Quaternion.identity;
