@@ -10,7 +10,7 @@
 
 1. Unity Hub で **Unity 6.3 LTS** をインストール（Android Build Support と Visual Studio を含める）
 2. Unity Hub で **Universal 3D** テンプレートの新規プロジェクトを作る
-3. このリポジトリの `mist-island/Assets/MistIsland` フォルダを、作ったプロジェクトの `Assets/` の中にコピー
+3. このリポジトリの `Assets/MistIsland` フォルダを、作ったプロジェクトの `Assets/` の中にコピー
 4. Unity のメニュー **MistIsland → セットアップ（設定・シーン・縦画面）** を実行
    - `Assets/MistIsland/Resources/MistIsland/GameConfig.asset`（数値の設定ファイル）を作成
    - `Assets/MistIsland/Scenes/Main.unity` を作成してビルド設定の先頭に登録
@@ -19,6 +19,16 @@
 
 > `GameConfig.autoBootstrap` が有効なので、セットアップ前でも SampleScene のまま Play すれば動きます。
 > ただし SampleScene にはポストエフェクトの Volume があり色味が変わるので、Main シーンで確かめるのがおすすめです。
+
+### このリポジトリで Unity プロジェクトごと管理する
+
+このリポジトリのルートは Unity プロジェクトのフォルダ構成（`Assets/` が直下）になっています。
+手元の Unity プロジェクトとつなぐには：
+
+1. GitHub Desktop などでこのリポジトリをクローンする
+2. 上の手順で作った Unity プロジェクトから `Packages` と `ProjectSettings` フォルダを、クローンしたフォルダにコピーする
+3. Unity Hub の「追加 → ディスクから加える」でクローンしたフォルダを開く
+4. `Packages` と `ProjectSettings` をコミットする（`Library` などは `.gitignore` で除外済み）
 
 ### Android 実機で確かめる
 
