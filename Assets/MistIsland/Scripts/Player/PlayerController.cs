@@ -95,10 +95,12 @@ namespace MistIsland
 
             Vector2 input = InputBridge.Move;
             Vector3 dir = _rig != null ? _rig.ToWorldDirection(input) : new Vector3(input.x, 0, input.y);
-            float speed = Stats.moveSpeed * (Combat.IsAttacking ? 0.45f : 1f);
+            float speed = Stats.moveSpeed;
+            if (Combat.IsCharging) speed *= _config.chargeMoveMultiplier;
+            else if (Combat.IsAttacking) speed *= 0.7f;
             if (dir.sqrMagnitude > 0.0004f)
             {
-                Move(dir * speed * dt);
+                MoveBy(dir * speed * dt * SlopeFactor(dir));
                 if (!Combat.IsAttacking) Face(dir, 14f);
                 _bob += dt * 12f * dir.magnitude;
             }
@@ -109,7 +111,19 @@ namespace MistIsland
             Model.localPosition = new Vector3(0f, Mathf.Abs(Mathf.Sin(_bob)) * 0.08f, 0f);
         }
 
-        void Move(Vector3 delta)
+        /// <summary>上り坂では少し遅くなる。</summary>
+        float SlopeFactor(Vector3 dir)
+        {
+            var island = Island.Instance;
+            if (island == null) return 1f;
+            Vector3 p = transform.position;
+            Vector3 ahead = p + dir.normalized * 0.5f;
+            float rise = island.HeightAt(ahead.x, ahead.z) - p.y;
+            return Mathf.Clamp(1f - rise * 0.6f, 0.55f, 1.1f);
+        }
+
+        /// <summary>海に入らないように動く（溜め突きの踏み込みでも使う）。</summary>
+        public void MoveBy(Vector3 delta)
         {
             var island = Island.Instance;
             Vector3 p = transform.position;

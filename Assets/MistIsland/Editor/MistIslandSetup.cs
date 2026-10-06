@@ -38,6 +38,15 @@ namespace MistIsland.EditorTools
             EditorGUIUtility.PingObject(config);
         }
 
+        [MenuItem("MistIsland/設定ファイルを初期値に戻す", priority = 21)]
+        public static void ResetConfig()
+        {
+            if (!EditorUtility.DisplayDialog("MistIsland", "GameConfig の値をすべてコードの初期値に戻しますか？", "戻す", "キャンセル")) return;
+            AssetDatabase.DeleteAsset(ConfigPath);
+            SelectConfig();
+            Debug.Log("[MistIsland] GameConfig を初期値で作り直しました");
+        }
+
         [MenuItem("MistIsland/セーブデータを削除", priority = 40)]
         public static void DeleteSave()
         {

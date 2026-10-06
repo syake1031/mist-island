@@ -6,14 +6,15 @@ using UnityEngine.InputSystem;
 namespace MistIsland
 {
     /// <summary>
-    /// 画面タッチ（仮想スティック・ボタン）とキーボードの入力をまとめる。
+    /// 画面タッチ（仮想スティック・長押し）とキーボードの入力をまとめる。
     /// タッチ側は UI が値を書き込み、ゲーム側はここだけを読む。
-    /// キーボード：WASD/矢印 移動、Space 攻撃、F 調べる、Q/E カメラ回転、ホイール ズーム
+    /// キーボード：WASD/矢印 移動、Space 長押しで溜め攻撃、F 調べる、Q/E カメラ回転、ホイール ズーム
     /// </summary>
     public static class InputBridge
     {
         public static Vector2 JoystickValue;
-        public static bool AttackHeld;
+        /// <summary>画面の長押し（溜め）。</summary>
+        public static bool ChargeHeld;
         public static float PendingCameraYaw;
         public static float PendingZoom;
 
@@ -26,9 +27,10 @@ namespace MistIsland
             }
         }
 
-        public static bool Attack
+        /// <summary>溜めボタン（画面長押し・Space）を押しているか。</summary>
+        public static bool Charge
         {
-            get { return AttackHeld || KeyHeld(KeyKind.Attack); }
+            get { return ChargeHeld || KeyHeld(KeyKind.Attack); }
         }
 
         public static bool InteractPressed
@@ -144,7 +146,7 @@ namespace MistIsland
         public static void Reset()
         {
             JoystickValue = Vector2.zero;
-            AttackHeld = false;
+            ChargeHeld = false;
             PendingCameraYaw = 0f;
             PendingZoom = 0f;
         }

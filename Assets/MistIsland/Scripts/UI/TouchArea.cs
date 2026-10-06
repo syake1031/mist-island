@@ -1,26 +1,36 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
 
 namespace MistIsland
 {
     /// <summary>
     /// 画面全体のタッチ受付（ボタンの後ろ側）。
-    /// 左半分を押すとその場に仮想スティックが出て移動、右半分を横にドラッグするとカメラが回る。
-    /// 指ごとに pointerId で区別するので、移動しながら回転もできる。
+    /// ・左半分：押したところに仮想スティックが出て移動
+    /// ・右半分：横にドラッグするとカメラが回る。動かさずに長押しすると溜め攻撃
+    /// 指ごとに pointerId で区別するので、移動しながら回転・溜めもできる。
     /// </summary>
     public class TouchArea : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
     {
         public float joystickRadius = 120f;
         public float rotateDegreesPerPixel = 0.25f;
+        /// <summary>これ以上動いたら長押しではなくドラッグとみなす（画面ピクセル）。</summary>
+        public float holdTolerance = 30f;
+
+        class RightPointer
+        {
+            public Vector2 start;
+            public float downTime;
+            public bool rotating;
+            public bool charging;
+        }
 
         RectTransform _rect;
         RectTransform _stickBase;
         RectTransform _stickKnob;
         int _stickPointer = int.MinValue;
         Vector2 _stickOrigin;
-        readonly HashSet<int> _rotatePointers = new HashSet<int>();
+        readonly Dictionary<int, RightPointer> _right = new Dictionary<int, RightPointer>();
 
         public void Initialize(RectTransform stickBase, RectTransform stickKnob)
         {
@@ -51,7 +61,7 @@ namespace MistIsland
             }
             else
             {
-                _rotatePointers.Add(e.pointerId);
+                _right[e.pointerId] = new RightPointer { start = e.position, downTime = Time.unscaledTime };
             }
         }
 
@@ -65,11 +75,14 @@ namespace MistIsland
                 Vector2 v = clamped / joystickRadius;
                 // 小さな揺れは無視する
                 InputBridge.JoystickValue = v.magnitude < 0.12f ? Vector2.zero : v;
+                return;
             }
-            else if (_rotatePointers.Contains(e.pointerId))
-            {
+
+            RightPointer p;
+            if (!_right.TryGetValue(e.pointerId, out p) || p.charging) return;
+            if (!p.rotating && (e.position - p.start).magnitude > holdTolerance) p.rotating = true;
+            if (p.rotating)
                 InputBridge.PendingCameraYaw += e.delta.x * rotateDegreesPerPixel * (1080f / Mathf.Max(1f, Screen.width));
-            }
         }
 
         public void OnPointerUp(PointerEventData e)
@@ -80,14 +93,36 @@ namespace MistIsland
                 _stickBase.gameObject.SetActive(false);
                 InputBridge.JoystickValue = Vector2.zero;
             }
-            _rotatePointers.Remove(e.pointerId);
+            _right.Remove(e.pointerId);
+            RefreshCharge();
+        }
+
+        void Update()
+        {
+            // 動かさずに押し続けている指があれば溜め開始
+            float delay = GameConfig.Load().chargeStartDelay;
+            foreach (var p in _right.Values)
+            {
+                if (!p.rotating && !p.charging && Time.unscaledTime - p.downTime >= delay)
+                    p.charging = true;
+            }
+            RefreshCharge();
+        }
+
+        void RefreshCharge()
+        {
+            bool charging = false;
+            foreach (var p in _right.Values)
+                if (p.charging) charging = true;
+            InputBridge.ChargeHeld = charging;
         }
 
         void OnDisable()
         {
             _stickPointer = int.MinValue;
-            _rotatePointers.Clear();
+            _right.Clear();
             InputBridge.JoystickValue = Vector2.zero;
+            InputBridge.ChargeHeld = false;
             if (_stickBase != null) _stickBase.gameObject.SetActive(false);
         }
     }

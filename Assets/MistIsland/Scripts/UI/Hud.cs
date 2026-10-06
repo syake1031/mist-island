@@ -52,7 +52,7 @@ namespace MistIsland
         RectTransform _modalContent;
         Button _modalClose;
         System.Action _modalRefresh;
-        int _menuTab;
+        CampScreen _camp;
 
         class Floating
         {
@@ -74,6 +74,8 @@ namespace MistIsland
             BuildTop();
             BuildBottom();
             BuildModal();
+            _camp = UIFactory.Stretch(UIFactory.Rect("BaseCamp", transform)).gameObject.AddComponent<CampScreen>();
+            _camp.Initialize(_gm, this);
             BuildToast();
             _gm.Changed += Refresh;
             Refresh();
@@ -176,7 +178,7 @@ namespace MistIsland
             UIFactory.Stretch(_hpText.rectTransform);
 
             // メニュー
-            var menu = UIFactory.MakeButton(_safe, "メニュー", 38, () => OpenMenu(_menuTab), UIFactory.Accent, UIFactory.AccentText);
+            var menu = UIFactory.MakeButton(_safe, "島・町", 38, OpenMenu, UIFactory.Accent, UIFactory.AccentText);
             UIFactory.Place((RectTransform)menu.transform, topRight, topRight, new Vector2(-24, -194), new Vector2(260, 110));
 
             // 夜だけ出る拠点の耐久
@@ -196,20 +198,15 @@ namespace MistIsland
         {
             var bottomRight = new Vector2(1f, 0f);
 
-            var attack = UIFactory.Panel(_safe, "AttackButton", new Color(0.95f, 0.55f, 0.48f, 0.9f), UIFactory.Circle);
-            UIFactory.Place(attack.rectTransform, bottomRight, bottomRight, new Vector2(-60, 120), new Vector2(280, 280));
-            var attackLabel = UIFactory.Label(attack.transform, "攻撃", 52, Color.white, TextAnchor.MiddleCenter);
-            UIFactory.Stretch(attackLabel.rectTransform);
-            attack.gameObject.AddComponent<HoldButton>().Changed = held => InputBridge.AttackHeld = held;
 
             _interactButton = UIFactory.MakeButton(_safe, "建てる", 38, OnInteract, UIFactory.Accent, UIFactory.AccentText);
-            UIFactory.Place((RectTransform)_interactButton.transform, bottomRight, bottomRight, new Vector2(-60, 440), new Vector2(340, 120));
+            UIFactory.Place((RectTransform)_interactButton.transform, bottomRight, bottomRight, new Vector2(-60, 200), new Vector2(380, 130));
 
             _interactInfo = UIFactory.Label(_safe, "", 30, UIFactory.TextColor, TextAnchor.LowerRight);
-            UIFactory.Place(_interactInfo.rectTransform, bottomRight, bottomRight, new Vector2(-64, 576), new Vector2(560, 160));
+            UIFactory.Place(_interactInfo.rectTransform, bottomRight, bottomRight, new Vector2(-64, 340), new Vector2(560, 160));
 
-            var hint = UIFactory.Label(_safe, "左ドラッグ：移動　右ドラッグ：カメラ回転", 26, new Color(1, 1, 1, 0.55f), TextAnchor.LowerLeft);
-            UIFactory.Place(hint.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(32, 28), new Vector2(640, 50));
+            var hint = UIFactory.Label(_safe, "左ドラッグ：移動　右ドラッグ：カメラ回転　右長押し：溜め攻撃", 26, new Color(1, 1, 1, 0.55f), TextAnchor.LowerLeft);
+            UIFactory.Place(hint.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(32, 28), new Vector2(1000, 50));
         }
 
         void BuildToast()
@@ -276,10 +273,15 @@ namespace MistIsland
             UpdateToast();
             UpdateFloats();
 
+            if (_camp.IsOpen)
+            {
+                if (InputBridge.MenuPressed) _camp.Close();
+                return;
+            }
             if (InputBridge.MenuPressed)
             {
                 if (IsModalOpen) CloseModal();
-                else OpenMenu(_menuTab);
+                else OpenMenu();
             }
             if (InputBridge.InteractPressed && !IsModalOpen && _interactButton.gameObject.activeSelf) OnInteract();
         }
@@ -330,7 +332,7 @@ namespace MistIsland
         {
             bool alive = _gm.Player.Health.IsAlive;
             _interaction = alive ? _gm.Town.FindInteraction(_gm.Player.transform.position, _gm.Config.interactRadius) : new Interaction();
-            bool show = _interaction.valid && !IsModalOpen;
+            bool show = _interaction.valid && !IsModalOpen && !_camp.IsOpen;
             if (_interactButton.gameObject.activeSelf != show) _interactButton.gameObject.SetActive(show);
 
             string info = "";
@@ -338,8 +340,8 @@ namespace MistIsland
             {
                 if (_interaction.isHall)
                 {
-                    UIFactory.SetButtonLabel(_interactButton, "拠点を見る");
-                    info = "防衛力 " + Mathf.RoundToInt(_gm.Town.DefensePower);
+                    UIFactory.SetButtonLabel(_interactButton, "ベースキャンプ");
+                    info = "ジョブ・装備を変える";
                 }
                 else if (_interaction.building != null)
                 {
@@ -361,7 +363,7 @@ namespace MistIsland
         void OnInteract()
         {
             if (!_interaction.valid) return;
-            if (_interaction.isHall) OpenHall();
+            if (_interaction.isHall) _camp.Open();
             else if (_interaction.building != null) OpenBuilding(_interaction.building);
             else OpenBuild(_interaction.slot);
         }
@@ -433,7 +435,7 @@ namespace MistIsland
         void OpenModal(string title, bool tabs, System.Action fill)
         {
             InputBridge.JoystickValue = Vector2.zero;
-            InputBridge.AttackHeld = false;
+            InputBridge.ChargeHeld = false;
             _modal.SetActive(true);
             _modal.transform.SetAsLastSibling();
             _toastRoot.transform.SetAsLastSibling();
@@ -459,53 +461,24 @@ namespace MistIsland
             ClearChildren(_modalContent);
         }
 
-        /// <summary>レイアウトに残らないよう、非表示にしてから消す。</summary>
-        static void ClearChildren(Transform parent)
-        {
-            for (int i = parent.childCount - 1; i >= 0; i--)
-            {
-                GameObject child = parent.GetChild(i).gameObject;
-                child.SetActive(false);
-                Destroy(child);
-            }
-        }
-
         Text Paragraph(string text, int size = 34)
         {
-            Text t = UIFactory.Label(_modalContent, text, size, UIFactory.TextColor, TextAnchor.UpperLeft);
-            return t;
+            return UIFactory.Paragraph(_modalContent, text, size);
         }
 
         void Row(string text, string buttonLabel, bool enabled, UnityAction onClick, float height = 150f)
         {
-            Image row = UIFactory.Panel(_modalContent, "Row", UIFactory.CardColor);
-            UIFactory.Layout(row, height);
-            var h = row.gameObject.AddComponent<HorizontalLayoutGroup>();
-            h.padding = new RectOffset(28, 18, 12, 12);
-            h.spacing = 18;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = true;
-
-            Text t = UIFactory.Label(row.transform, text, 32, UIFactory.TextColor);
-            UIFactory.Layout(t, -1f, 0f, 1f);
-
-            if (buttonLabel != null)
-            {
-                Button b = UIFactory.MakeButton(row.transform, buttonLabel, 30, onClick,
-                    enabled ? UIFactory.Accent : UIFactory.DisabledColor, enabled ? UIFactory.AccentText : UIFactory.SubTextColor);
-                b.interactable = enabled;
-                UIFactory.Layout(b, -1f, 300f);
-            }
+            UIFactory.Row(_modalContent, text, height, new UIFactory.RowButton(buttonLabel, enabled, onClick, 300f));
         }
 
         static string Cost(int coins, int materials)
         {
-            string s = coins + "コイン";
-            if (materials > 0) s += " " + materials + "素材";
-            return s;
+            return UIFactory.Cost(coins, materials);
+        }
+
+        static void ClearChildren(Transform parent)
+        {
+            UIFactory.ClearChildren(parent);
         }
 
         void Act(bool ok, string error)
@@ -538,112 +511,13 @@ namespace MistIsland
 
         // ---- メニュー ----
 
-        static readonly string[] TabNames = { "成長", "装備", "島" };
-
-        void OpenMenu(int tab)
+        void OpenMenu()
         {
-            _menuTab = tab;
-            OpenModal("メニュー", true, FillMenu);
-        }
-
-        void FillMenu()
-        {
-            ClearChildren(_modalTabs);
-            for (int i = 0; i < TabNames.Length; i++)
+            OpenModal("島", false, () =>
             {
-                int index = i;
-                bool active = i == _menuTab;
-                UIFactory.MakeButton(_modalTabs, TabNames[i], 36, () => { _menuTab = index; FillMenu(); },
-                    active ? UIFactory.Accent : UIFactory.ButtonColor, active ? UIFactory.AccentText : UIFactory.TextColor);
-            }
-
-            ClearContent();
-            switch (_menuTab)
-            {
-                case 0: FillGrowth(); break;
-                case 1: FillEquipment(); break;
-                default: FillIsland(); break;
-            }
-        }
-
-        static string RangeName(WeaponType w)
-        {
-            switch (w)
-            {
-                case WeaponType.Sword: return "近距離";
-                case WeaponType.Spear: return "中距離";
-                default: return "遠距離";
-            }
-        }
-
-        void FillGrowth()
-        {
-            SaveData d = _gm.Data;
-            PlayerStats s = _gm.CurrentStats;
-            string xp = _gm.IsMaxLevel ? "最大レベル" : "次のレベルまで EXP " + d.xp + " / " + _gm.XpToNext;
-            Paragraph("<b>Lv" + d.level + "</b>　" + xp + "\n" +
-                      "体力 " + Mathf.RoundToInt(s.maxHp) + "　移動 " + s.moveSpeed.ToString("0.0") +
-                      "　攻撃 " + s.damage.ToString("0.0") + "　被ダメージ軽減 " + Mathf.RoundToInt(s.damageReduction * 100f) + "%", 32);
-            Paragraph("<b>ジョブ</b>　<size=28>ジョブを変えると武器と能力が変わる</size>", 34);
-
-            for (int i = 0; i < _gm.Config.jobs.Length; i++)
-            {
-                int index = i;
-                JobDef j = _gm.Config.jobs[i];
-                bool current = d.jobIndex == i;
-                bool unlocked = d.level >= j.unlockLevel;
-                string text = "<b>" + j.name + "</b>　武器：" + Names.Of(j.weapon) + "（" + RangeName(j.weapon) + "）\n" +
-                              "<size=28>体力×" + j.hpMultiplier.ToString("0.0#") + "　速さ×" + j.speedMultiplier.ToString("0.0#") + "</size>";
-                string label = current ? "使用中" : unlocked ? "このジョブにする" : "Lv" + j.unlockLevel + "で開放";
-                Row(text, label, !current && unlocked && _gm.IsPrepTime, () =>
-                {
-                    string err;
-                    Act(_gm.TryChangeJob(index, out err), err);
-                });
-            }
-
-            if (!_gm.IsPrepTime) Paragraph("<size=28>夜のあいだはジョブを変えられません</size>", 28);
-        }
-
-        void FillEquipment()
-        {
-            SaveData d = _gm.Data;
-            GameConfig cfg = _gm.Config;
-            Paragraph("敵から手に入る素材とコインで装備を強化できる（朝・昼のみ）", 30);
-
-            foreach (WeaponType w in new[] { WeaponType.Sword, WeaponType.Spear, WeaponType.Bow })
-            {
-                WeaponType type = w;
-                int lv = d.WeaponLevel(w);
-                bool available = _gm.IsWeaponAvailable(w);
-                bool max = lv >= cfg.maxEquipLevel;
-                int c, m;
-                _gm.WeaponUpgradeCost(w, out c, out m);
-                float mul = 1f + cfg.weaponDamagePerLevel * (lv - 1);
-                string text = "<b>" + Names.Of(w) + " +" + (lv - 1) + "</b>（" + RangeName(w) + "）\n<size=28>ダメージ ×" + mul.ToString("0.00") + "</size>";
-                string label = !available ? "未開放" : max ? "最大" : "強化\n<size=24>" + Cost(c, m) + "</size>";
-                Row(text, label, available && !max && _gm.IsPrepTime && _gm.CanAfford(c, m), () =>
-                {
-                    string err;
-                    Act(_gm.TryUpgradeWeapon(type, out err), err);
-                });
-            }
-
-            {
-                bool unlocked = d.level >= cfg.armorUnlockLevel;
-                bool max = d.armorLevel >= cfg.maxEquipLevel;
-                int c, m;
-                _gm.ArmorUpgradeCost(out c, out m);
-                float reduction = Mathf.Min(cfg.maxArmorReduction, cfg.armorReductionPerLevel * d.armorLevel);
-                string text = "<b>防具 " + (d.armorLevel == 0 ? "なし" : "Lv" + d.armorLevel) + "</b>\n<size=28>被ダメージ軽減 " + Mathf.RoundToInt(reduction * 100f) + "%</size>";
-                string action = d.armorLevel == 0 ? "作る" : "強化";
-                string label = !unlocked ? "Lv" + cfg.armorUnlockLevel + "で開放" : max ? "最大" : action + "\n<size=24>" + Cost(c, m) + "</size>";
-                Row(text, label, unlocked && !max && _gm.IsPrepTime && _gm.CanAfford(c, m), () =>
-                {
-                    string err;
-                    Act(_gm.TryUpgradeArmor(out err), err);
-                });
-            }
+                ClearContent();
+                FillIsland();
+            });
         }
 
         void FillIsland()
@@ -759,21 +633,6 @@ namespace MistIsland
                         });
                 }
                 if (!_gm.IsPrepTime) Paragraph("<size=28>夜のあいだは強化できません</size>", 28);
-            });
-        }
-
-        void OpenHall()
-        {
-            OpenModal("拠点", false, () =>
-            {
-                ClearContent();
-                Health hall = _gm.Town.Hall;
-                GameConfig cfg = _gm.Config;
-                float tonight = Formulas.NightStrength(_gm.Clock.Day, cfg.offlineEnemyBaseStrength, cfg.offlineEnemyGrowthPerDay);
-                Paragraph("耐久 " + Mathf.CeilToInt(hall.Current) + " / " + Mathf.CeilToInt(hall.Max) + "\n" +
-                          "防衛力 " + Mathf.RoundToInt(_gm.Town.DefensePower) + "　／　放置中の今夜の敵の強さ " + Mathf.RoundToInt(tonight) + "\n\n" +
-                          "<size=30>夜に拠点が壊されると、施設に貯まっていた収入が奪われる。\n" +
-                          "アプリを閉じている間の夜は、防衛力と敵の強さを比べて判定される。</size>", 34);
             });
         }
     }

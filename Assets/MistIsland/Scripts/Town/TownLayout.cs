@@ -31,9 +31,9 @@ namespace MistIsland
             return FirstRing + RingSpacing * ring;
         }
 
-        public static bool RingAvailable(int ring, float islandRadius)
+        public static bool RingAvailable(int ring, float townRadius)
         {
-            return RingRadius(ring) <= islandRadius - 4f;
+            return RingRadius(ring) <= townRadius;
         }
 
         static List<SlotInfo> All
@@ -63,16 +63,22 @@ namespace MistIsland
             }
         }
 
-        /// <summary>今の島で使える空き地（高さ付き）。海岸に近すぎるものは除く。</summary>
+        /// <summary>今の島で使える空き地（高さ付き）。海岸に近すぎる所と、山の斜面は除く。</summary>
         public static List<SlotInfo> AvailableSlots(Island island)
         {
             var list = new List<SlotInfo>();
             foreach (var s in All)
             {
-                if (!RingAvailable(s.ring, island.Radius)) continue;
+                if (!RingAvailable(s.ring, island.TownRadius)) continue;
                 if (island.NormalizedDistance(s.position.x, s.position.z) > 0.82f) continue;
-                float h = island.HeightAt(s.position.x, s.position.z);
+                float x = s.position.x, z = s.position.z;
+                float h = island.HeightAt(x, z);
                 if (h < 0.4f) continue;
+                const float e = 1.2f;
+                float slope = Mathf.Max(
+                    Mathf.Abs(island.HeightAt(x + e, z) - island.HeightAt(x - e, z)),
+                    Mathf.Abs(island.HeightAt(x, z + e) - island.HeightAt(x, z - e))) / (2f * e);
+                if (slope > 0.35f) continue;
                 var slot = s;
                 slot.position.y = h;
                 list.Add(slot);
@@ -80,13 +86,13 @@ namespace MistIsland
             return list;
         }
 
-        public static bool IsNearAnySlot(Vector3 p, float distance, float islandRadius)
+        public static bool IsNearAnySlot(Vector3 p, float distance, float townRadius)
         {
             p.y = 0f;
             if (p.magnitude < HallRadius + distance) return true;
             foreach (var s in All)
             {
-                if (!RingAvailable(s.ring, islandRadius)) continue;
+                if (!RingAvailable(s.ring, townRadius)) continue;
                 Vector3 d = s.position - p;
                 d.y = 0f;
                 if (d.sqrMagnitude < distance * distance) return true;

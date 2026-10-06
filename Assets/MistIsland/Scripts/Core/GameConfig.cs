@@ -22,12 +22,38 @@ namespace MistIsland
         public float range;
         [Tooltip("攻撃が当たる扇の角度（弓は無視）")]
         public float arcDegrees;
-        public float damage;
         [Tooltip("攻撃モーション1回の長さ（秒）")]
         public float motionSeconds;
         [Tooltip("モーション開始から当たり判定が出るまで（秒）")]
         public float hitTime;
         public float projectileSpeed;
+    }
+
+    /// <summary>作って装備する武器。種類（剣・槍・弓）はジョブで決まる。</summary>
+    [Serializable]
+    public class WeaponItemDef
+    {
+        public string id;
+        public string name;
+        public WeaponType type;
+        public float damage;
+        public int unlockLevel = 1;
+        [Tooltip("0 なら最初から持っている")]
+        public int coinCost;
+        public int materialCost;
+    }
+
+    [Serializable]
+    public class ArmorItemDef
+    {
+        public string id;
+        public string name;
+        [Tooltip("受けるダメージを減らす割合 0..1")]
+        public float damageReduction;
+        public float bonusHp;
+        public int unlockLevel = 1;
+        public int coinCost;
+        public int materialCost;
     }
 
     [Serializable]
@@ -100,14 +126,26 @@ namespace MistIsland
 
         [Header("島")]
         public int islandSeed = 7;
-        public float baseIslandRadius = 14f;
-        public float radiusPerExpansion = 4f;
+        public float baseIslandRadius = 30f;
+        public float radiusPerExpansion = 6f;
+        [Tooltip("建物を置ける範囲（町）の半径")]
+        public float townBaseRadius = 12f;
+        public float townRadiusPerExpansion = 4f;
         [Tooltip("拡張 n 段目が開放されるレベル")]
         public int[] expansionUnlockLevels = { 3, 6, 9, 12, 15 };
         public int expansionBaseCost = 200;
         public int expansionBaseMaterialCost = 20;
         public float expansionCostGrowth = 2f;
         public float landHeight = 1.4f;
+        [Header("山")]
+        public int mountainCount = 5;
+        public float mountainMinHeight = 4f;
+        public float mountainMaxHeight = 9f;
+        [Tooltip("島の中心から山までの距離")]
+        public float mountainMinDistance = 13f;
+        public float mountainMaxDistance = 25f;
+        public float mountainMinRadius = 4f;
+        public float mountainMaxRadius = 7f;
 
         [Header("プレイヤー")]
         public float baseMoveSpeed = 4.5f;
@@ -135,21 +173,49 @@ namespace MistIsland
         [Header("武器（固定の攻撃モーション1つ）")]
         public WeaponDef[] weapons =
         {
-            new WeaponDef { type = WeaponType.Sword, range = 1.9f, arcDegrees = 130f, damage = 12f, motionSeconds = 0.4f, hitTime = 0.16f },
-            new WeaponDef { type = WeaponType.Spear, range = 3.3f, arcDegrees = 35f, damage = 15f, motionSeconds = 0.6f, hitTime = 0.26f },
-            new WeaponDef { type = WeaponType.Bow, range = 11f, arcDegrees = 0f, damage = 10f, motionSeconds = 0.7f, hitTime = 0.38f, projectileSpeed = 20f },
+            new WeaponDef { type = WeaponType.Sword, range = 1.9f, arcDegrees = 130f, motionSeconds = 0.4f, hitTime = 0.16f },
+            new WeaponDef { type = WeaponType.Spear, range = 3.3f, arcDegrees = 35f, motionSeconds = 0.6f, hitTime = 0.26f },
+            new WeaponDef { type = WeaponType.Bow, range = 11f, arcDegrees = 0f, motionSeconds = 0.7f, hitTime = 0.38f, projectileSpeed = 20f },
         };
 
-        [Header("装備強化")]
-        public int maxEquipLevel = 15;
-        public int weaponUpgradeCoinBase = 40;
-        public int weaponUpgradeMaterialBase = 5;
-        public float weaponDamagePerLevel = 0.15f;
-        public int armorUnlockLevel = 2;
-        public int armorCoinBase = 50;
-        public int armorMaterialBase = 8;
-        public float armorReductionPerLevel = 0.05f;
+        [Header("攻撃")]
+        [Tooltip("近くに敵がいたら自動で攻撃する")]
+        public bool autoAttack = true;
+        [Tooltip("画面長押しで溜め始めるまでの時間（秒）")]
+        public float chargeStartDelay = 0.2f;
+        [Tooltip("溜め攻撃になるまで溜める時間（秒）")]
+        public float chargeSeconds = 0.7f;
+        public float chargeDamageMultiplier = 3f;
+        public float chargeRangeMultiplier = 1.6f;
+        [Tooltip("溜めている間の移動速度の倍率")]
+        public float chargeMoveMultiplier = 0.4f;
+
+        [Header("装備（ベースキャンプで作る・強化する・装備する）")]
+        public WeaponItemDef[] weaponItems =
+        {
+            new WeaponItemDef { id = "sword_wood", name = "木の剣", type = WeaponType.Sword, damage = 12f, unlockLevel = 1 },
+            new WeaponItemDef { id = "sword_iron", name = "鉄の剣", type = WeaponType.Sword, damage = 18f, unlockLevel = 4, coinCost = 120, materialCost = 15 },
+            new WeaponItemDef { id = "sword_mist", name = "霧鋼の剣", type = WeaponType.Sword, damage = 28f, unlockLevel = 9, coinCost = 450, materialCost = 50 },
+            new WeaponItemDef { id = "spear_wood", name = "木の槍", type = WeaponType.Spear, damage = 15f, unlockLevel = 1 },
+            new WeaponItemDef { id = "spear_iron", name = "鉄の槍", type = WeaponType.Spear, damage = 22f, unlockLevel = 5, coinCost = 150, materialCost = 18 },
+            new WeaponItemDef { id = "spear_mist", name = "霧鋼の槍", type = WeaponType.Spear, damage = 34f, unlockLevel = 10, coinCost = 520, materialCost = 55 },
+            new WeaponItemDef { id = "bow_short", name = "短弓", type = WeaponType.Bow, damage = 10f, unlockLevel = 1 },
+            new WeaponItemDef { id = "bow_long", name = "長弓", type = WeaponType.Bow, damage = 15f, unlockLevel = 6, coinCost = 160, materialCost = 18 },
+            new WeaponItemDef { id = "bow_mist", name = "霧の弓", type = WeaponType.Bow, damage = 24f, unlockLevel = 11, coinCost = 560, materialCost = 60 },
+        };
+        public ArmorItemDef[] armorItems =
+        {
+            new ArmorItemDef { id = "armor_cloth", name = "布の服", damageReduction = 0f, bonusHp = 0f, unlockLevel = 1 },
+            new ArmorItemDef { id = "armor_leather", name = "革の鎧", damageReduction = 0.1f, bonusHp = 15f, unlockLevel = 2, coinCost = 60, materialCost = 8 },
+            new ArmorItemDef { id = "armor_iron", name = "鉄の鎧", damageReduction = 0.2f, bonusHp = 40f, unlockLevel = 6, coinCost = 220, materialCost = 30 },
+            new ArmorItemDef { id = "armor_mist", name = "霧鋼の鎧", damageReduction = 0.32f, bonusHp = 80f, unlockLevel = 10, coinCost = 600, materialCost = 70 },
+        };
+        public int maxEquipLevel = 10;
+        public float weaponDamagePerLevel = 0.12f;
+        public float armorPerLevel = 0.08f;
         public float maxArmorReduction = 0.6f;
+        public int upgradeCoinBase = 30;
+        public int upgradeMaterialBase = 4;
         public float equipCostGrowth = 1.5f;
 
         [Header("敵")]
@@ -219,6 +285,40 @@ namespace MistIsland
             return weapons[0];
         }
 
+        public WeaponItemDef WeaponItem(string id)
+        {
+            foreach (var w in weaponItems)
+                if (w.id == id) return w;
+            return null;
+        }
+
+        public ArmorItemDef ArmorItem(string id)
+        {
+            foreach (var a in armorItems)
+                if (a.id == id) return a;
+            return null;
+        }
+
+        /// <summary>その種類の最初から持っている武器。</summary>
+        public WeaponItemDef StarterWeapon(WeaponType type)
+        {
+            foreach (var w in weaponItems)
+                if (w.type == type && w.coinCost <= 0 && w.materialCost <= 0) return w;
+            foreach (var w in weaponItems)
+                if (w.type == type) return w;
+            return null;
+        }
+
+        public ArmorItemDef StarterArmor
+        {
+            get
+            {
+                foreach (var a in armorItems)
+                    if (a.coinCost <= 0 && a.materialCost <= 0) return a;
+                return armorItems.Length > 0 ? armorItems[0] : null;
+            }
+        }
+
         public BuildingDef Building(BuildingType type)
         {
             foreach (var b in buildings)
@@ -229,6 +329,11 @@ namespace MistIsland
         public float IslandRadius(int expansion)
         {
             return baseIslandRadius + radiusPerExpansion * expansion;
+        }
+
+        public float TownRadius(int expansion)
+        {
+            return townBaseRadius + townRadiusPerExpansion * expansion;
         }
 
         public int MaxExpansion { get { return expansionUnlockLevels.Length; } }

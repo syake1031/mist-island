@@ -16,9 +16,12 @@ namespace MistIsland
         public static Island Instance { get; private set; }
 
         public float Radius { get; private set; }
+        /// <summary>建物を置ける範囲（町）の半径。</summary>
+        public float TownRadius { get; private set; }
 
         float _landHeight = 1.4f;
         float[] _phase = new float[8];
+        Vector4[] _mountains = new Vector4[0]; // x, z, 高さ, 半径
         GameObject _terrain;
         GameObject _decorations;
         Mesh _decorationMesh;
@@ -30,6 +33,7 @@ namespace MistIsland
         static readonly Color LightGrass = new Color(0.72f, 0.84f, 0.6f);
         static readonly Color Rock = new Color(0.68f, 0.67f, 0.66f);
         static readonly Color SeaBed = new Color(0.5f, 0.62f, 0.62f);
+        static readonly Color Snow = new Color(0.94f, 0.95f, 0.98f);
 
         void Awake()
         {
@@ -41,15 +45,55 @@ namespace MistIsland
             if (Instance == this) Instance = null;
         }
 
-        public void Build(int seed, float radius, float landHeight)
+        public void Build(GameConfig config, int expansion)
         {
-            Radius = radius;
-            _landHeight = landHeight;
+            Radius = config.IslandRadius(expansion);
+            TownRadius = config.TownRadius(expansion);
+            _landHeight = config.landHeight;
+            int seed = config.islandSeed;
             var rng = new System.Random(seed);
             for (int i = 0; i < _phase.Length; i++) _phase[i] = (float)(rng.NextDouble() * Mathf.PI * 2f);
+            BuildMountains(config, seed);
 
             BuildTerrain();
             BuildDecorations(seed);
+        }
+
+        /// <summary>
+        /// 山の位置は島の大きさに関係なく種から決まる（拡張しても山は動かない）。
+        /// 町の中心から離れた所に、ほぼ均等な向きで並べる。
+        /// </summary>
+        void BuildMountains(GameConfig config, int seed)
+        {
+            var rng = new System.Random(seed * 17 + 3);
+            int count = Mathf.Max(0, config.mountainCount);
+            _mountains = new Vector4[count];
+            float startAngle = (float)(rng.NextDouble() * Mathf.PI * 2f);
+            for (int i = 0; i < count; i++)
+            {
+                float angle = startAngle + i * Mathf.PI * 2f / Mathf.Max(1, count) + (float)(rng.NextDouble() - 0.5) * 0.8f;
+                float dist = Mathf.Lerp(config.mountainMinDistance, config.mountainMaxDistance, (float)rng.NextDouble());
+                float height = Mathf.Lerp(config.mountainMinHeight, config.mountainMaxHeight, (float)rng.NextDouble());
+                float r = Mathf.Lerp(config.mountainMinRadius, config.mountainMaxRadius, (float)rng.NextDouble());
+                _mountains[i] = new Vector4(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist, height, r);
+            }
+        }
+
+        float MountainHeight(float x, float z)
+        {
+            float h = 0f;
+            for (int i = 0; i < _mountains.Length; i++)
+            {
+                Vector4 m = _mountains[i];
+                float dx = x - m.x;
+                float dz = z - m.y;
+                float q = (dx * dx + dz * dz) / (m.w * m.w);
+                if (q > 9f) continue;
+                // 尾根っぽく少し揺らす
+                float ridge = 1f + 0.12f * Mathf.Sin(dx * 0.9f + _phase[i % _phase.Length]) * Mathf.Cos(dz * 0.8f);
+                h = Mathf.Max(h, m.z * Mathf.Exp(-q) * ridge);
+            }
+            return h;
         }
 
         // ---- 高さ ----
@@ -79,7 +123,10 @@ namespace MistIsland
                         + 0.16f * Mathf.Sin((x + z) * 0.41f + _phase[5]);
             // 町の中心は平らにしておく
             hills *= Smooth(3f, 8f, d);
-            float h = (_landHeight + hills) * land;
+            // 大きなうねりと山。町の中心付近は平らなまま
+            float rolling = 0.9f * Mathf.Sin(x * 0.07f + _phase[6]) * Mathf.Cos(z * 0.06f + _phase[7]);
+            float relief = (rolling + MountainHeight(x, z)) * Smooth(6f, 13f, d);
+            float h = (_landHeight + hills + Mathf.Max(-0.6f, relief)) * land;
             h -= 0.25f * Smooth(0.9f, 1.05f, t);
             h -= 1.6f * Smooth(1f, 1.35f, t);
             return h;
@@ -176,7 +223,9 @@ namespace MistIsland
             float tint = 0.5f + 0.5f * Mathf.Sin(x * 0.5f + _phase[6]) * Mathf.Sin(z * 0.45f + _phase[7]);
             Color grass = Color.Lerp(Grass, LightGrass, tint);
             Color c = Color.Lerp(Sand, grass, grassMix);
-            return Color.Lerp(c, Rock, Mathf.Clamp01((slope - 0.45f) * 1.5f));
+            c = Color.Lerp(c, Rock, Mathf.Clamp01((slope - 0.45f) * 1.5f));
+            // 高いところは雪
+            return Color.Lerp(c, Snow, Mathf.Clamp01((h - 6.5f) / 1.2f));
         }
 
         // ---- 木と岩 ----
@@ -189,7 +238,7 @@ namespace MistIsland
             _decorations.transform.SetParent(transform, false);
 
             var rng = new System.Random(seed * 31 + 1);
-            int attempts = Mathf.RoundToInt(Radius * Radius * 0.35f);
+            int attempts = Mathf.Min(900, Mathf.RoundToInt(Radius * Radius * 0.3f));
             var pineDark = new Color(0.4f, 0.58f, 0.46f);
             var pineLight = new Color(0.5f, 0.68f, 0.5f);
             var trunk = new Color(0.55f, 0.45f, 0.38f);
@@ -206,9 +255,9 @@ namespace MistIsland
                 float t = NormalizedDistance(x, z);
                 float d = Mathf.Sqrt(x * x + z * z);
                 if (t > 0.8f || d < 4f) continue;
-                if (TownLayout.IsNearAnySlot(new Vector3(x, 0, z), 2.2f, Radius)) continue;
+                if (TownLayout.IsNearAnySlot(new Vector3(x, 0, z), 2.2f, TownRadius)) continue;
                 float h = HeightAt(x, z);
-                if (h < 0.5f) continue;
+                if (h < 0.5f || h > 6.5f) continue;
 
                 bool isRock = rng.NextDouble() < 0.18;
                 var p = new Vector3(x, h, z);

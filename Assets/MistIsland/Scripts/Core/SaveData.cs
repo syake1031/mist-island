@@ -12,40 +12,71 @@ namespace MistIsland
         public float stored;
     }
 
+    /// <summary>持っている装備と、その強化レベル。</summary>
+    [Serializable]
+    public class OwnedItem
+    {
+        public string id;
+        public int level = 1;
+    }
+
     [Serializable]
     public class SaveData
     {
-        public int version = 1;
+        public const int CurrentVersion = 2;
+
+        public int version = CurrentVersion;
         public int coins;
         public int materials;
         public int level = 1;
         public int xp;
         public int jobIndex;
-        public int[] weaponLevels = { 1, 1, 1 };
-        public int armorLevel;
         public int expansion;
         public int day = 1;
         public float cycleTime;
         public long lastSavedUtcTicks;
         public List<BuildingSave> buildings = new List<BuildingSave>();
 
-        public int WeaponLevel(WeaponType type)
+        public List<OwnedItem> weapons = new List<OwnedItem>();
+        public List<OwnedItem> armors = new List<OwnedItem>();
+        /// <summary>武器の種類（剣・槍・弓）ごとに装備している武器の ID。</summary>
+        public string[] equippedWeapons = { "", "", "" };
+        public string equippedArmor = "";
+
+        public OwnedItem FindWeapon(string id)
         {
-            int i = (int)type;
-            if (weaponLevels == null || weaponLevels.Length <= i) return 1;
-            return Math.Max(1, weaponLevels[i]);
+            return Find(weapons, id);
         }
 
-        public void SetWeaponLevel(WeaponType type, int value)
+        public OwnedItem FindArmor(string id)
+        {
+            return Find(armors, id);
+        }
+
+        static OwnedItem Find(List<OwnedItem> list, string id)
+        {
+            if (list == null || string.IsNullOrEmpty(id)) return null;
+            foreach (var item in list)
+                if (item.id == id) return item;
+            return null;
+        }
+
+        public string EquippedWeaponId(WeaponType type)
         {
             int i = (int)type;
-            if (weaponLevels == null || weaponLevels.Length < 3)
+            if (equippedWeapons == null || equippedWeapons.Length <= i) return "";
+            return equippedWeapons[i] ?? "";
+        }
+
+        public void SetEquippedWeapon(WeaponType type, string id)
+        {
+            if (equippedWeapons == null || equippedWeapons.Length < 3)
             {
-                var old = weaponLevels ?? new int[0];
-                weaponLevels = new[] { 1, 1, 1 };
-                Array.Copy(old, weaponLevels, Math.Min(old.Length, 3));
+                var old = equippedWeapons ?? new string[0];
+                equippedWeapons = new[] { "", "", "" };
+                Array.Copy(old, equippedWeapons, Math.Min(old.Length, 3));
             }
-            weaponLevels[i] = value;
+            equippedWeapons[(int)type] = id;
         }
     }
 }

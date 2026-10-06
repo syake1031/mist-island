@@ -73,12 +73,13 @@ namespace MistIsland
             All.Remove(this);
         }
 
-        public static Enemy FindHit(Vector3 point, float radius)
+        public static Enemy FindHit(Vector3 point, float radius, HashSet<Enemy> exclude = null)
         {
             for (int i = 0; i < All.Count; i++)
             {
                 Enemy e = All[i];
                 if (!e.IsActive) continue;
+                if (exclude != null && exclude.Contains(e)) continue;
                 Vector3 d = e.transform.position - point;
                 d.y = 0f;
                 float r = radius + e.Health.Radius;

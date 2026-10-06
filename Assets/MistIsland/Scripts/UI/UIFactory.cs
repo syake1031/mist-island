@@ -196,5 +196,88 @@ namespace MistIsland
             if (preferredHeight > 0) le.minHeight = preferredHeight;
             return le;
         }
+        // ---- 一覧画面の部品 ----
+
+        public struct RowButton
+        {
+            public string label;
+            public bool enabled;
+            public UnityAction onClick;
+            public float width;
+
+            public RowButton(string label, bool enabled, UnityAction onClick, float width = 260f)
+            {
+                this.label = label;
+                this.enabled = enabled;
+                this.onClick = onClick;
+                this.width = width;
+            }
+        }
+
+        /// <summary>縦に並べるリストの見出しや説明文。</summary>
+        public static Text Paragraph(Transform parent, string text, int size = 34)
+        {
+            return Label(parent, text, size, TextColor, TextAnchor.UpperLeft);
+        }
+
+        /// <summary>左に説明、右にボタン（0〜複数）を並べた1行。</summary>
+        public static Image Row(Transform parent, string text, float height, params RowButton[] buttons)
+        {
+            Image row = Panel(parent, "Row", CardColor);
+            Layout(row, height);
+            var h = row.gameObject.AddComponent<HorizontalLayoutGroup>();
+            h.padding = new RectOffset(28, 18, 12, 12);
+            h.spacing = 14;
+            h.childAlignment = TextAnchor.MiddleLeft;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = true;
+
+            Text t = Label(row.transform, text, 32, TextColor);
+            Layout(t, -1f, 0f, 1f);
+
+            foreach (var spec in buttons)
+            {
+                if (spec.label == null) continue;
+                Button b = MakeButton(row.transform, spec.label, 28, spec.onClick,
+                    spec.enabled ? Accent : DisabledColor, spec.enabled ? AccentText : SubTextColor);
+                b.interactable = spec.enabled;
+                Layout(b, -1f, spec.width);
+            }
+            return row;
+        }
+
+        public static string Cost(int coins, int materials)
+        {
+            string s = coins + "コイン";
+            if (materials > 0) s += " " + materials + "素材";
+            return s;
+        }
+
+        /// <summary>レイアウトに残らないよう、非表示にしてから消す。</summary>
+        public static void ClearChildren(Transform parent)
+        {
+            for (int i = parent.childCount - 1; i >= 0; i--)
+            {
+                GameObject child = parent.GetChild(i).gameObject;
+                child.SetActive(false);
+                Object.Destroy(child);
+            }
+        }
+
+        /// <summary>縦に並べる入れ物（VerticalLayoutGroup 付き）。</summary>
+        public static RectTransform VerticalList(Transform parent, string name, float spacing = 16f)
+        {
+            RectTransform rt = Rect(name, parent);
+            var layout = rt.gameObject.AddComponent<VerticalLayoutGroup>();
+            layout.spacing = spacing;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childAlignment = TextAnchor.UpperCenter;
+            return rt;
+        }
     }
 }
