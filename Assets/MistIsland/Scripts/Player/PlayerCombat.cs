@@ -3,28 +3,46 @@ using UnityEngine;
 namespace MistIsland
 {
     /// <summary>
-    /// プレイヤーの攻撃。スキルはなく、武器ごとに固定の攻撃モーションが1つだけある。
-    /// 剣＝近距離の横なぎ、槍＝中距離の突き、弓＝遠距離の射撃。攻撃ボタンを押している間くり返す。
-    /// 攻撃を始めるとき、間合いの近くにいる敵の方を自動で向く。
+    /// プレイヤーの攻撃。スキルはなく、武器ごとに固定の攻撃モーションが1つ。
+    /// ・近くに敵がいると自動で攻撃する（オート攻撃）
+    /// ・画面を長押しすると溜め、離すと溜め攻撃（剣＝回転斬り、槍＝踏み込み突き、弓＝貫通矢）
     /// </summary>
     public class PlayerCombat : MonoBehaviour
     {
+        enum State { Idle, Attacking, Charging }
+
         PlayerController _player;
         PlayerStats _stats;
+        GameConfig _config;
         Transform _pivot;
         Transform _weapon;
-        float _time = -1f;
-        bool _hitDone;
+        Transform _ring;
+        Renderer _ringRenderer;
+        MaterialPropertyBlock _ringBlock;
 
-        public bool IsAttacking { get { return _time >= 0f; } }
+        State _state = State.Idle;
+        float _time;
+        float _chargeTime;
+        bool _hitDone;
+        bool _charged;
+        Vector3 _dashDirection;
+
+        public bool IsAttacking { get { return _state == State.Attacking; } }
+        public bool IsCharging { get { return _state == State.Charging; } }
+        public bool IsFullyCharged { get { return IsCharging && _chargeTime >= _config.chargeSeconds; } }
+        public float ChargeRatio { get { return IsCharging ? Mathf.Clamp01(_chargeTime / _config.chargeSeconds) : 0f; } }
 
         public void Setup(PlayerController player, PlayerStats stats, bool rebuild)
         {
             bool weaponChanged = rebuild || _weapon == null || _stats.weapon == null || _stats.weapon.type != stats.weapon.type;
             _player = player;
             _stats = stats;
+            _config = GameConfig.Load();
             if (weaponChanged) BuildWeapon();
+            if (_ring == null) BuildRing();
         }
+
+        // ---- 見た目 ----
 
         void BuildWeapon()
         {
@@ -48,8 +66,6 @@ namespace MistIsland
                     Shapes.Cone(_weapon, new Vector3(0, 0, 1.55f), new Vector3(0.16f, 0.35f, 0.16f), metal).transform.localRotation = Quaternion.Euler(90, 0, 0);
                     break;
                 case WeaponType.Bow:
-                    // 弓は体の前で縦に構える
-                    _pivot.localPosition = new Vector3(0.1f, 0.85f, 0.35f);
                     for (int i = -2; i <= 2; i++)
                     {
                         float y = i * 0.18f;
@@ -62,60 +78,181 @@ namespace MistIsland
             ResetPose();
         }
 
+        /// <summary>足元に出る溜めの輪。</summary>
+        void BuildRing()
+        {
+            _ring = Shapes.Create(PrimitiveType.Cylinder, _player.transform, new Vector3(0, 0.05f, 0), new Vector3(1f, 0.01f, 1f), new Color(1f, 0.85f, 0.5f), "ChargeRing").transform;
+            _ringRenderer = _ring.GetComponent<Renderer>();
+            _ringBlock = new MaterialPropertyBlock();
+            _ring.gameObject.SetActive(false);
+        }
+
+        void UpdateRing()
+        {
+            bool show = IsCharging;
+            if (_ring.gameObject.activeSelf != show) _ring.gameObject.SetActive(show);
+            if (!show) return;
+            float r = ChargeRatio;
+            float s = Mathf.Lerp(0.6f, 2.4f, r);
+            if (IsFullyCharged) s += Mathf.Sin(Time.time * 18f) * 0.08f;
+            _ring.localScale = new Vector3(s, 0.01f, s);
+            _ringRenderer.GetPropertyBlock(_ringBlock);
+            _ringBlock.SetFloat("_Emission", IsFullyCharged ? 1.2f : 0.2f);
+            _ringRenderer.SetPropertyBlock(_ringBlock);
+        }
+
+        // ---- 毎フレーム ----
+
         void Update()
         {
-            if (_player == null || !_player.Health.IsAlive)
+            if (_player == null) return;
+            float dt = Time.deltaTime;
+
+            if (!_player.Health.IsAlive)
             {
-                _time = -1f;
+                _state = State.Idle;
+                _chargeTime = 0f;
+                ResetPose();
+                UpdateRing();
                 return;
             }
 
-            if (!IsAttacking && InputBridge.Attack) Begin();
-            if (IsAttacking) Animate(Time.deltaTime);
+            bool hold = InputBridge.Charge;
+
+            switch (_state)
+            {
+                case State.Attacking:
+                    Animate(dt);
+                    break;
+
+                case State.Charging:
+                    if (hold)
+                    {
+                        _chargeTime += dt;
+                        ChargePose();
+                    }
+                    else
+                    {
+                        bool full = _chargeTime >= _config.chargeSeconds;
+                        _chargeTime = 0f;
+                        _state = State.Idle;
+                        ResetPose();
+                        if (full) Begin(true);
+                    }
+                    break;
+
+                default:
+                    if (hold)
+                    {
+                        _state = State.Charging;
+                        _chargeTime = 0f;
+                    }
+                    else if (_config.autoAttack && Enemy.Nearest(transform.position, AutoRange) != null)
+                    {
+                        Begin(false);
+                    }
+                    break;
+            }
+
+            UpdateRing();
         }
 
-        void Begin()
+        /// <summary>オート攻撃を始める距離。</summary>
+        float AutoRange
         {
+            get
+            {
+                WeaponDef w = _stats.weapon;
+                return w.type == WeaponType.Bow ? w.range : w.range + 0.6f;
+            }
+        }
+
+        void Begin(bool charged)
+        {
+            _state = State.Attacking;
             _time = 0f;
             _hitDone = false;
-            float aimRange = _stats.weapon.type == WeaponType.Bow ? _stats.weapon.range : _stats.weapon.range + 2.5f;
+            _charged = charged;
+
+            float aimRange = AutoRange * (charged ? _config.chargeRangeMultiplier : 1f) + 1.5f;
             Enemy target = Enemy.Nearest(transform.position, aimRange);
             if (target != null) _player.Face(target.transform.position - transform.position, 0f);
+            _dashDirection = transform.forward;
+        }
+
+        float MotionSeconds
+        {
+            get { return _stats.weapon.motionSeconds * (_charged ? 1.3f : 1f); }
+        }
+
+        float HitTime
+        {
+            get { return _stats.weapon.hitTime * (_charged ? 1.3f : 1f); }
+        }
+
+        // ---- モーション ----
+
+        void ChargePose()
+        {
+            // 溜め中は武器を引いて構える
+            float k = Ease(ChargeRatio);
+            switch (_stats.weapon.type)
+            {
+                case WeaponType.Sword:
+                    _pivot.localRotation = Quaternion.Euler(10f - 30f * k, 70f + 40f * k, 0f);
+                    break;
+                case WeaponType.Spear:
+                    _pivot.localPosition = new Vector3(0.25f, 0.8f, -0.45f * k);
+                    break;
+                case WeaponType.Bow:
+                    _weapon.localPosition = new Vector3(0f, 0f, -0.12f * k);
+                    break;
+            }
         }
 
         void Animate(float dt)
         {
             WeaponDef w = _stats.weapon;
             _time += dt;
-            float u = Mathf.Clamp01(_time / w.motionSeconds);
-            float hitU = w.hitTime / w.motionSeconds;
+            float motion = MotionSeconds;
+            float u = Mathf.Clamp01(_time / motion);
+            float hitU = HitTime / motion;
 
             switch (w.type)
             {
                 case WeaponType.Sword:
-                {
-                    // 右に振りかぶって左へ横なぎ
-                    float swing;
-                    if (u < 0.25f) swing = Mathf.Lerp(70f, 90f, u / 0.25f);
-                    else if (u < 0.7f) swing = Mathf.Lerp(90f, -80f, Ease((u - 0.25f) / 0.45f));
-                    else swing = Mathf.Lerp(-80f, 70f, (u - 0.7f) / 0.3f);
-                    _pivot.localRotation = Quaternion.Euler(10f, swing, 0f);
+                    if (_charged)
+                    {
+                        // 回転斬り：体ごと1回転
+                        _player.Model.localRotation = Quaternion.Euler(0f, 360f * Ease(u), 0f);
+                        _pivot.localRotation = Quaternion.Euler(10f, 90f, 0f);
+                    }
+                    else
+                    {
+                        float swing;
+                        if (u < 0.25f) swing = Mathf.Lerp(70f, 90f, u / 0.25f);
+                        else if (u < 0.7f) swing = Mathf.Lerp(90f, -80f, Ease((u - 0.25f) / 0.45f));
+                        else swing = Mathf.Lerp(-80f, 70f, (u - 0.7f) / 0.3f);
+                        _pivot.localRotation = Quaternion.Euler(10f, swing, 0f);
+                    }
                     break;
-                }
+
                 case WeaponType.Spear:
                 {
-                    // 引いてから突く
+                    float reach = _charged ? 1.4f : 0.9f;
                     float z;
                     if (u < hitU * 0.6f) z = Mathf.Lerp(0f, -0.35f, u / (hitU * 0.6f));
-                    else if (u < hitU) z = Mathf.Lerp(-0.35f, 0.9f, (u - hitU * 0.6f) / (hitU * 0.4f));
-                    else z = Mathf.Lerp(0.9f, 0f, Ease((u - hitU) / (1f - hitU)));
+                    else if (u < hitU) z = Mathf.Lerp(-0.35f, reach, (u - hitU * 0.6f) / (hitU * 0.4f));
+                    else z = Mathf.Lerp(reach, 0f, Ease((u - hitU) / (1f - hitU)));
                     _pivot.localPosition = new Vector3(0.25f, 0.8f, z);
                     _pivot.localRotation = Quaternion.identity;
+                    // 溜め突きは前に踏み込む
+                    if (_charged && u > hitU * 0.6f && u < hitU) _player.MoveBy(_dashDirection * 9f * dt);
                     break;
                 }
+
                 case WeaponType.Bow:
                 {
-                    // 引き絞って放つ
                     float pull = u < hitU ? Ease(u / hitU) : 1f - Ease((u - hitU) / (1f - hitU));
                     _weapon.localPosition = new Vector3(0f, 0f, -0.1f * pull);
                     _pivot.localRotation = Quaternion.Euler(-6f * pull, 0f, 0f);
@@ -123,15 +260,15 @@ namespace MistIsland
                 }
             }
 
-            if (!_hitDone && _time >= w.hitTime)
+            if (!_hitDone && _time >= HitTime)
             {
                 _hitDone = true;
                 Strike();
             }
 
-            if (_time >= w.motionSeconds)
+            if (_time >= motion)
             {
-                _time = -1f;
+                _state = State.Idle;
                 ResetPose();
             }
         }
@@ -145,40 +282,54 @@ namespace MistIsland
         void ResetPose()
         {
             if (_pivot == null) return;
-            if (_stats.weapon.type == WeaponType.Bow)
+            _player.Model.localRotation = Quaternion.identity;
+            _weapon.localPosition = Vector3.zero;
+            switch (_stats.weapon.type)
             {
-                _pivot.localPosition = new Vector3(0.1f, 0.85f, 0.35f);
-                _weapon.localPosition = Vector3.zero;
+                case WeaponType.Bow:
+                    _pivot.localPosition = new Vector3(0.1f, 0.85f, 0.35f);
+                    _pivot.localRotation = Quaternion.identity;
+                    break;
+                case WeaponType.Spear:
+                    _pivot.localPosition = new Vector3(0.25f, 0.8f, 0f);
+                    _pivot.localRotation = Quaternion.identity;
+                    break;
+                default:
+                    _pivot.localPosition = new Vector3(0.32f, 0.75f, 0.05f);
+                    _pivot.localRotation = Quaternion.Euler(10f, 70f, 0f);
+                    break;
             }
-            else if (_stats.weapon.type == WeaponType.Spear)
-            {
-                _pivot.localPosition = new Vector3(0.25f, 0.8f, 0f);
-            }
-            _pivot.localRotation = _stats.weapon.type == WeaponType.Sword ? Quaternion.Euler(10f, 70f, 0f) : Quaternion.identity;
         }
+
+        // ---- 当たり判定 ----
 
         void Strike()
         {
             WeaponDef w = _stats.weapon;
             Vector3 origin = transform.position;
             Vector3 forward = transform.forward;
+            float damage = _stats.damage * (_charged ? _config.chargeDamageMultiplier : 1f);
+            float range = w.range * (_charged ? _config.chargeRangeMultiplier : 1f);
 
             if (w.type == WeaponType.Bow)
             {
-                Projectile.Fire(origin + Vector3.up * 0.9f + forward * 0.5f, forward, w.projectileSpeed, w.range, _stats.damage, true);
+                float speed = w.projectileSpeed * (_charged ? 1.4f : 1f);
+                Projectile.Fire(origin + Vector3.up * 0.9f + forward * 0.5f, forward, speed, range, damage, true, _charged);
                 return;
             }
 
-            float halfArc = w.arcDegrees * 0.5f;
+            // 溜めた剣は全方向、それ以外は前方の扇
+            float halfArc = _charged && w.type == WeaponType.Sword ? 180f : w.arcDegrees * 0.5f;
             foreach (var e in Enemy.All.ToArray())
             {
                 if (e == null || !e.IsActive) continue;
                 Vector3 to = e.transform.position - origin;
+                float dy = Mathf.Abs(to.y);
                 to.y = 0f;
                 float dist = to.magnitude;
-                if (dist > w.range + e.Health.Radius) continue;
+                if (dist > range + e.Health.Radius || dy > 2.5f) continue;
                 if (dist > 0.3f && Vector3.Angle(forward, to) > halfArc) continue;
-                e.TakeHit(_stats.damage, true);
+                e.TakeHit(damage, true);
             }
         }
     }

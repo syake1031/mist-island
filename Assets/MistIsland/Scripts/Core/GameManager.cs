@@ -47,7 +47,7 @@ namespace MistIsland
             Clock.Initialize(config.Durations, Data.day, Data.cycleTime);
 
             Island = CreateChild<Island>("Island");
-            Island.Build(config.islandSeed, config.IslandRadius(Data.expansion), config.landHeight);
+            Island.Build(config, Data.expansion);
             CreateChild<Sea>("Sea").Build(400f);
 
             Town = CreateChild<TownManager>("Town");
@@ -75,9 +75,10 @@ namespace MistIsland
             {
                 Hud.ShowDialog("霧の島へようこそ",
                     "霧の海に浮かぶ小さな島で町を育てよう。\n\n" +
-                    "・朝と昼：施設の収入を受け取り、建物や装備を強化する\n" +
-                    "・夜：襲撃者が海から上陸してくる。自分の手で撃退しよう\n\n" +
-                    "まずは光る空き地に近づいて「建てる」から銀行を建ててみよう。\n" +
+                    "・朝と昼：施設の収入を受け取り、建物を建てて町を育てる\n" +
+                    "・夜：襲撃者が海から上陸してくる。近づくと自動で攻撃する\n" +
+                    "・画面右側を長押しして離すと溜め攻撃\n" +
+                    "・すぐ近くのベースキャンプで、ジョブや装備を変えられる\n\n" +
                     "（左半分ドラッグで移動、右半分ドラッグでカメラ回転）");
                 Save();
             }
@@ -103,6 +104,7 @@ namespace MistIsland
             if (Data.buildings == null) Data.buildings = new List<BuildingSave>();
             if (Data.jobIndex < 0 || Data.jobIndex >= Config.jobs.Length || Config.jobs[Data.jobIndex].unlockLevel > Data.level)
                 Data.jobIndex = 0;
+            EnsureStarterItems();
             float total = Config.Durations.Total;
             if (Data.cycleTime < 0f || Data.cycleTime >= total) Data.cycleTime = 0f;
         }
@@ -115,6 +117,7 @@ namespace MistIsland
                 Clock.DayStarted -= OnDayStarted;
             }
             if (Instance == this) Instance = null;
+            if (IsInCamp) Time.timeScale = 1f;
         }
 
         void Update()
@@ -203,7 +206,10 @@ namespace MistIsland
                 if (j.unlockLevel == level && level > 1) list.Add("ジョブ「" + j.name + "」");
             foreach (var b in Config.buildings)
                 if (b.unlockLevel == level && level > 1) list.Add((b.IsDefense ? "防衛装置「" : "施設「") + b.name + "」");
-            if (Config.armorUnlockLevel == level) list.Add("防具");
+            foreach (var w in Config.weaponItems)
+                if (w.unlockLevel == level && level > 1) list.Add("武器「" + w.name + "」");
+            foreach (var a in Config.armorItems)
+                if (a.unlockLevel == level && level > 1) list.Add("防具「" + a.name + "」");
             for (int i = 0; i < Config.expansionUnlockLevels.Length; i++)
                 if (Config.expansionUnlockLevels[i] == level) list.Add("島の拡張（" + (i + 1) + "段目）");
             return list;
@@ -228,12 +234,16 @@ namespace MistIsland
             if (Player != null) Player.ApplyStats(CurrentStats);
         }
 
+        public bool IsJobUnlocked(JobDef job)
+        {
+            return Data.level >= job.unlockLevel;
+        }
+
         public bool TryChangeJob(int index, out string error)
         {
             error = null;
             JobDef job = Config.jobs[index];
-            if (Data.level < job.unlockLevel) { error = "Lv" + job.unlockLevel + "で開放"; return false; }
-            if (!IsPrepTime) { error = "夜はジョブを変えられません"; return false; }
+            if (!IsJobUnlocked(job)) { error = "Lv" + job.unlockLevel + "で開放"; return false; }
             Data.jobIndex = index;
             RefreshPlayer();
             Toast(job.name + "になった（武器：" + Names.Of(job.weapon) + "）");
@@ -241,56 +251,133 @@ namespace MistIsland
             return true;
         }
 
-        public bool IsWeaponAvailable(WeaponType type)
+        /// <summary>最初から持っている装備を持たせ、装備欄が空なら埋める。</summary>
+        void EnsureStarterItems()
         {
-            foreach (var j in Config.jobs)
-                if (j.weapon == type && j.unlockLevel <= Data.level) return true;
-            return false;
+            if (Data.weapons == null) Data.weapons = new List<OwnedItem>();
+            if (Data.armors == null) Data.armors = new List<OwnedItem>();
+            foreach (WeaponType type in new[] { WeaponType.Sword, WeaponType.Spear, WeaponType.Bow })
+            {
+                WeaponItemDef starter = Config.StarterWeapon(type);
+                if (starter == null) continue;
+                if (Data.FindWeapon(starter.id) == null) Data.weapons.Add(new OwnedItem { id = starter.id });
+                string equipped = Data.EquippedWeaponId(type);
+                WeaponItemDef def = Config.WeaponItem(equipped);
+                if (def == null || def.type != type || Data.FindWeapon(equipped) == null) Data.SetEquippedWeapon(type, starter.id);
+            }
+            ArmorItemDef armor = Config.StarterArmor;
+            if (armor != null)
+            {
+                if (Data.FindArmor(armor.id) == null) Data.armors.Add(new OwnedItem { id = armor.id });
+                if (Config.ArmorItem(Data.equippedArmor) == null || Data.FindArmor(Data.equippedArmor) == null) Data.equippedArmor = armor.id;
+            }
         }
 
-        public void WeaponUpgradeCost(WeaponType type, out int coins, out int materials)
+        public void ItemUpgradeCost(int itemCoinCost, int itemMaterialCost, int level, out int coins, out int materials)
         {
-            int lv = Data.WeaponLevel(type);
-            coins = Formulas.UpgradeCost(Config.weaponUpgradeCoinBase, Config.equipCostGrowth, lv);
-            materials = Formulas.UpgradeCost(Config.weaponUpgradeMaterialBase, Config.equipCostGrowth, lv);
+            coins = Formulas.UpgradeCost(Config.upgradeCoinBase + itemCoinCost / 4, Config.equipCostGrowth, level);
+            materials = Formulas.UpgradeCost(Config.upgradeMaterialBase + itemMaterialCost / 4, Config.equipCostGrowth, level);
         }
 
-        public bool TryUpgradeWeapon(WeaponType type, out string error)
+        public bool TryCraftWeapon(WeaponItemDef def, out string error)
         {
             error = null;
-            if (!IsWeaponAvailable(type)) { error = "まだ使えない武器です"; return false; }
-            if (Data.WeaponLevel(type) >= Config.maxEquipLevel) { error = "これ以上強化できません"; return false; }
-            if (!IsPrepTime) { error = "夜は強化できません"; return false; }
-            int c, m;
-            WeaponUpgradeCost(type, out c, out m);
-            if (!TrySpend(c, m)) { error = "コインか素材が足りません"; return false; }
-            Data.SetWeaponLevel(type, Data.WeaponLevel(type) + 1);
+            if (Data.FindWeapon(def.id) != null) { error = "もう持っています"; return false; }
+            if (Data.level < def.unlockLevel) { error = "Lv" + def.unlockLevel + "で作れる"; return false; }
+            if (!TrySpend(def.coinCost, def.materialCost)) { error = "コインか素材が足りません"; return false; }
+            Data.weapons.Add(new OwnedItem { id = def.id });
+            Data.SetEquippedWeapon(def.type, def.id);
             RefreshPlayer();
-            Toast(Names.Of(type) + "を +" + (Data.WeaponLevel(type) - 1) + " に強化した");
+            Toast(def.name + "を作って装備した");
             NotifyChanged();
             return true;
         }
 
-        public void ArmorUpgradeCost(out int coins, out int materials)
-        {
-            coins = Formulas.UpgradeCost(Config.armorCoinBase, Config.equipCostGrowth, Data.armorLevel + 1);
-            materials = Formulas.UpgradeCost(Config.armorMaterialBase, Config.equipCostGrowth, Data.armorLevel + 1);
-        }
-
-        public bool TryUpgradeArmor(out string error)
+        public bool TryCraftArmor(ArmorItemDef def, out string error)
         {
             error = null;
-            if (Data.level < Config.armorUnlockLevel) { error = "Lv" + Config.armorUnlockLevel + "で開放"; return false; }
-            if (Data.armorLevel >= Config.maxEquipLevel) { error = "これ以上強化できません"; return false; }
-            if (!IsPrepTime) { error = "夜は強化できません"; return false; }
-            int c, m;
-            ArmorUpgradeCost(out c, out m);
-            if (!TrySpend(c, m)) { error = "コインか素材が足りません"; return false; }
-            Data.armorLevel++;
+            if (Data.FindArmor(def.id) != null) { error = "もう持っています"; return false; }
+            if (Data.level < def.unlockLevel) { error = "Lv" + def.unlockLevel + "で作れる"; return false; }
+            if (!TrySpend(def.coinCost, def.materialCost)) { error = "コインか素材が足りません"; return false; }
+            Data.armors.Add(new OwnedItem { id = def.id });
+            Data.equippedArmor = def.id;
             RefreshPlayer();
-            Toast(Data.armorLevel == 1 ? "防具を手に入れた" : "防具を Lv" + Data.armorLevel + " に強化した");
+            Toast(def.name + "を作って装備した");
             NotifyChanged();
             return true;
+        }
+
+        public bool TryUpgradeWeapon(WeaponItemDef def, out string error)
+        {
+            error = null;
+            OwnedItem owned = Data.FindWeapon(def.id);
+            if (owned == null) { error = "持っていません"; return false; }
+            if (owned.level >= Config.maxEquipLevel) { error = "これ以上強化できません"; return false; }
+            int c, m;
+            ItemUpgradeCost(def.coinCost, def.materialCost, owned.level, out c, out m);
+            if (!TrySpend(c, m)) { error = "コインか素材が足りません"; return false; }
+            owned.level++;
+            RefreshPlayer();
+            Toast(def.name + "を +" + (owned.level - 1) + " に強化した");
+            NotifyChanged();
+            return true;
+        }
+
+        public bool TryUpgradeArmor(ArmorItemDef def, out string error)
+        {
+            error = null;
+            OwnedItem owned = Data.FindArmor(def.id);
+            if (owned == null) { error = "持っていません"; return false; }
+            if (owned.level >= Config.maxEquipLevel) { error = "これ以上強化できません"; return false; }
+            int c, m;
+            ItemUpgradeCost(def.coinCost, def.materialCost, owned.level, out c, out m);
+            if (!TrySpend(c, m)) { error = "コインか素材が足りません"; return false; }
+            owned.level++;
+            RefreshPlayer();
+            Toast(def.name + "を +" + (owned.level - 1) + " に強化した");
+            NotifyChanged();
+            return true;
+        }
+
+        public void EquipWeapon(WeaponItemDef def)
+        {
+            if (Data.FindWeapon(def.id) == null) return;
+            Data.SetEquippedWeapon(def.type, def.id);
+            RefreshPlayer();
+            NotifyChanged();
+        }
+
+        public void EquipArmor(ArmorItemDef def)
+        {
+            if (Data.FindArmor(def.id) == null) return;
+            Data.equippedArmor = def.id;
+            RefreshPlayer();
+            NotifyChanged();
+        }
+
+        // ---- ベースキャンプ ----
+
+        public bool IsInCamp { get; private set; }
+
+        /// <summary>ベースキャンプに入る。中にいる間は時間が止まる。</summary>
+        public void EnterCamp()
+        {
+            if (IsInCamp) return;
+            IsInCamp = true;
+            Time.timeScale = 0f;
+            InputBridge.Reset();
+            Player.Health.HealFull();
+            NotifyChanged();
+        }
+
+        public void LeaveCamp()
+        {
+            if (!IsInCamp) return;
+            IsInCamp = false;
+            Time.timeScale = 1f;
+            InputBridge.Reset();
+            Save();
+            NotifyChanged();
         }
 
         // ---- 島の拡張 ----
@@ -318,7 +405,7 @@ namespace MistIsland
             ExpansionCost(out c, out m);
             if (!TrySpend(c, m)) { error = "コインか素材が足りません"; return false; }
             Data.expansion++;
-            Island.Build(Config.islandSeed, Config.IslandRadius(Data.expansion), Config.landHeight);
+            Island.Build(Config, Data.expansion);
             Town.RefreshSlots();
             Vector3 p = Player.transform.position;
             p.y = Island.HeightAt(p.x, p.z);

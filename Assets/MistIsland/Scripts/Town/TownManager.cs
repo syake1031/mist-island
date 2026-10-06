@@ -70,13 +70,30 @@ namespace MistIsland
             if (_hallVisual != null) Destroy(_hallVisual.gameObject);
             _hallVisual = new GameObject("Visual").transform;
             _hallVisual.SetParent(Hall.transform, false);
-            var wall = new Color(0.96f, 0.93f, 0.86f);
-            var roof = new Color(0.5f, 0.6f, 0.78f);
-            Shapes.Create(PrimitiveType.Cube, _hallVisual, new Vector3(0, 0.12f, 0), new Vector3(3.6f, 0.24f, 3.6f), new Color(0.78f, 0.76f, 0.72f));
-            Shapes.Create(PrimitiveType.Cube, _hallVisual, new Vector3(0, 1.1f, 0), new Vector3(2.6f, 1.8f, 2.6f), wall);
-            Shapes.Cone(_hallVisual, new Vector3(0, 2f, 0), new Vector3(3.6f, 1.6f, 3.6f), roof);
-            Shapes.Create(PrimitiveType.Cylinder, _hallVisual, new Vector3(0, 4.1f, 0), new Vector3(0.08f, 0.8f, 0.08f), new Color(0.5f, 0.4f, 0.34f));
-            Shapes.Create(PrimitiveType.Cube, _hallVisual, new Vector3(0.35f, 4.6f, 0), new Vector3(0.7f, 0.4f, 0.04f), new Color(0.95f, 0.75f, 0.4f));
+            // ベースキャンプ：テント・たき火・道具箱・旗
+            var canvas = new Color(0.95f, 0.9f, 0.8f);
+            var stripe = new Color(0.86f, 0.52f, 0.44f);
+            var wood = new Color(0.55f, 0.42f, 0.33f);
+            Shapes.Create(PrimitiveType.Cylinder, _hallVisual, new Vector3(0, 0.03f, 0), new Vector3(4.2f, 0.03f, 4.2f), new Color(0.78f, 0.72f, 0.62f));
+            Shapes.Cone(_hallVisual, new Vector3(0.6f, 0f, 0.8f), new Vector3(3f, 2.6f, 3f), canvas);
+            Shapes.Cone(_hallVisual, new Vector3(0.6f, 1.6f, 0.8f), new Vector3(1.2f, 1.05f, 1.2f), stripe);
+            Shapes.Create(PrimitiveType.Cube, _hallVisual, new Vector3(0.6f, 0.45f, -0.55f), new Vector3(0.7f, 0.9f, 0.1f), new Color(0.35f, 0.3f, 0.3f));
+            // たき火
+            for (int i = 0; i < 3; i++)
+            {
+                var log = Shapes.Create(PrimitiveType.Cylinder, _hallVisual, new Vector3(-1.1f, 0.1f, -0.9f), new Vector3(0.12f, 0.4f, 0.12f), wood);
+                log.transform.localRotation = Quaternion.Euler(90f, i * 60f, 0f);
+            }
+            var fire = Shapes.Cone(_hallVisual, new Vector3(-1.1f, 0.12f, -0.9f), new Vector3(0.45f, 0.7f, 0.45f), new Color(1f, 0.6f, 0.3f), "Fire");
+            var glow = new MaterialPropertyBlock();
+            glow.SetFloat("_Emission", 1.5f);
+            fire.GetComponent<Renderer>().SetPropertyBlock(glow);
+            // 道具箱（装備を変える場所）
+            Shapes.Create(PrimitiveType.Cube, _hallVisual, new Vector3(1.3f, 0.3f, -1.2f), new Vector3(0.9f, 0.6f, 0.6f), wood);
+            Shapes.Create(PrimitiveType.Cube, _hallVisual, new Vector3(1.3f, 0.62f, -1.2f), new Vector3(0.95f, 0.08f, 0.65f), new Color(0.95f, 0.78f, 0.4f));
+            // 旗
+            Shapes.Create(PrimitiveType.Cylinder, _hallVisual, new Vector3(-1.4f, 1.6f, 1.2f), new Vector3(0.08f, 1.6f, 0.08f), wood);
+            Shapes.Create(PrimitiveType.Cube, _hallVisual, new Vector3(-1.05f, 2.9f, 1.2f), new Vector3(0.7f, 0.42f, 0.04f), new Color(0.5f, 0.62f, 0.85f));
             if (ruined)
             {
                 _hallVisual.localScale = new Vector3(1f, 0.5f, 1f);
